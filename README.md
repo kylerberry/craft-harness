@@ -17,9 +17,8 @@ flowchart LR
 
     R -. "HITL seam" .-> HUMAN["TODO(human) pause"]
     HUMAN --> R
-    R -. "lite" .-> SIM["simplify; tests stay green"]
+    R --> SIM["craft-code-simplifier; tests stay green"]
     SIM --> A["A — Assess"]
-    R --> A
     A -- "blockers" --> FA["F — Fix"]
     FA --> A
     A -- "/craft pass" --> T["T — Tighten"]
@@ -35,13 +34,14 @@ flowchart LR
 skills/
 ├── craft/                    # Autonomous CRAFTS workflow
 ├── craft-hitl/               # CRAFTS with a TODO(human) Render seam
-├── craft-lite/               # CRAFTS without T; simplify at end of R
+├── craft-lite/               # CRAFTS without T
 ├── guided-tour/              # One-concept-at-a-time codebase teaching
 └── security-and-hardening/   # Threat modeling and on-demand security references
 
 agents/
 ├── craft-planner.md          # C — Conceptualize
 ├── craft-builder.md          # R/F — Render and Fix
+├── craft-code-simplifier.md  # R-exit simplify gate
 ├── craft-evaluator.md        # A — Assess
 ├── craft-plan-security.md    # Pre-implementation security counsel lens
 ├── craft-security-review.md  # T — Tighten final-diff review (P0 gate)
@@ -60,7 +60,7 @@ CRAFTS is a sequential delivery workflow:
 | --- | --- | --- |
 | **C**onceptualize | `craft-planner` | Scope, acceptance criteria, tests, plan, and security triggers |
 | *Plan counsel* | `craft-plan-feasibility` · `craft-plan-scope` (+ `craft-plan-security` when triggered) | Independent one-pass review of the C plan before Render |
-| **R**ender | `craft-builder` | Test-first implementation: Red → Green → Refactor |
+| **R**ender | `craft-builder` then `craft-code-simplifier` | Test-first implementation, then required simplify exit gate |
 | **A**ssess | `craft-evaluator` | Independent review of implementation and tests |
 | **F**ix | `craft-builder` | Minimal fixes for blocking findings |
 | **T**ighten | `craft-security-review` | Bundled final-diff security review; only P0 findings block |
@@ -70,9 +70,9 @@ CRAFTS is a sequential delivery workflow:
 | --- | --- | --- |
 | `/craft` | `C → counsel → R → A → F → T → S` | Default. No short path. |
 | `/craft-hitl` | Same as `/craft`, HITL Render | A `TODO(human)` seam is reserved. |
-| `/craft-lite` | `C → counsel → R → simplify → A → F → S` | Tighten is out of scope (prototype, spike). |
+| `/craft-lite` | `C → counsel → R → A → F → S` | Tighten is out of scope (prototype, spike). |
 
-`/craft-lite` is an adapter on `/craft`: after Render is green it runs a `code-simplifier` pass on the Render diff and re-runs focused tests (they must stay green), then Assess and Fix as usual, then Sharpen with an empty T finding list. It does not spawn `craft-security-review`. Metrics use `--mode lite`.
+Every protocol runs the R-exit `craft-code-simplifier` gate after Render is green (tests must stay green; unrecoverable simplify is reverted). `/craft-lite` only skips Tighten and uses `--mode lite`.
 
 ### Plan counsel gate and security triggers
 
@@ -98,14 +98,14 @@ cp -R skills/* /path/to/project/.agents/skills/
 cp -R agents/* /path/to/project/.agents/agents/
 ```
 
-Then invoke `/craft`, `/craft-hitl`, or `/craft-lite`. Ensure the host supports the agent frontmatter and bundled security-review guidance. `/craft-lite` also needs a host `code-simplifier` agent (or the conductor applies the same diff-scoped pass).
+Then invoke `/craft`, `/craft-hitl`, or `/craft-lite`. Ensure the host supports the agent frontmatter and bundled security-review guidance.
 
 ### Author-machine live install (symlinks)
 
 On the author's machine, the listed entries under `~/.agents` point at this repository so the global workflow always matches git — one copy, no sync step:
 
 ```bash
-for f in craft-builder craft-evaluator craft-planner craft-plan-security craft-security-review craft-sharpener craft-plan-feasibility craft-plan-scope; do
+for f in craft-builder craft-code-simplifier craft-evaluator craft-planner craft-plan-security craft-security-review craft-sharpener craft-plan-feasibility craft-plan-scope; do
   ln -sf ~/Projects/agent-utilities/agents/$f.md ~/.agents/agents/$f.md
 done
 for skill in craft craft-hitl craft-lite guided-tour security-and-hardening; do
@@ -126,6 +126,7 @@ Agent frontmatter intentionally sets **no `model`** — in pi, frontmatter outra
 | Counsel: scope | light | `xai/grok-4.3` |
 | Counsel: security (plan mode) | medium, different family from planner | `zai/glm-5.3` |
 | R/F — builder | medium, different family from evaluator | `zai/glm-5.2` |
+| R-exit — `craft-code-simplifier` | medium, different family from builder | host default |
 | A — evaluator | heavy, different family from builder | `xai/grok-4.6` |
 | T — tighten | medium, different family from builder | `openai-codex/gpt-5.6-terra` |
 | S — sharpener | light | `openai-codex/gpt-5.6-luna` |

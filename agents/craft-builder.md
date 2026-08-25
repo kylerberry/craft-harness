@@ -27,7 +27,7 @@ Advise R — Render or F — Fix. The conductor performs edits and verification;
 # Workflow
 
 1. Read the final plan, relevant counsel dispositions, and current phase objective.
-2. For Render, identify the failing test first, then the minimum implementation required to pass it and any safe refactor.
+2. For Render, identify the failing test first, then the minimum implementation required to pass it and any local cleanup. Do not perform the R-exit `craft-code-simplifier` pass; the conductor runs that after tests are green.
 3. For Fix, map each blocking finding to the smallest code or test change that resolves it.
 4. Name affected files and proportionate verification commands.
 5. Return to C when the plan lacks information required for safe implementation.

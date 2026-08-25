@@ -108,8 +108,9 @@ Use `craft-builder` for test-first implementation guidance. Pass only the final 
 
 1. **Red:** write the planned failing test. Return to C if it cannot be expressed.
 2. **Green:** implement the minimum passing change.
-3. **Refactor:** simplify while tests remain green.
+3. **Refactor:** local cleanup while tests remain green. This is not the simplify gate.
 4. Run proportionate tests, type checks, lint, and formatting.
+5. **Simplify (R-exit, required):** after tests are green, spawn `craft-code-simplifier` on the Render diff only (changed lines; new files in full). If that agent is unavailable, apply the same pass yourself: preserve behavior, stay inside the diff, match repo conventions. Do not treat `/simplify` as available inside a subagent. Re-run focused tests. Stay in R until green. If simplify breaks tests, revert or fix those edits until green. If unrecoverable, revert simplify entirely, keep the last green Render, and enter A with that noted. Do not enter A red. Simplify is part of R; do not invent a metrics phase for it.
 
 #### HITL Render override
 
@@ -126,7 +127,7 @@ The conductor must not implement past, stub, or work around an unresolved human 
 
 Use `craft-evaluator` on a different model family from R. Pass the canonical criteria, final C plan, counsel findings and dispositions, changed files, and verification evidence.
 
-A checks the tests against the criteria, the implementation against both, and whether rejected or adopted counsel blockers were handled substantively. It returns `verdict`, `blocking_findings`, `simplification_opportunities`, `verification_gaps`, and concise rationale.
+A reviews the post-simplify tree. It checks the tests against the criteria, the implementation against both, and whether rejected or adopted counsel blockers were handled substantively. It returns `verdict`, `blocking_findings`, `verification_gaps`, and concise rationale. Residual style notes are optional and non-blocking; F does not apply them.
 
 ### F — Fix
 
