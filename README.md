@@ -17,13 +17,16 @@ flowchart LR
 
     R -. "HITL seam" .-> HUMAN["TODO(human) pause"]
     HUMAN --> R
-    R --> A["A — Assess"]
+    R -. "lite" .-> SIM["simplify; tests stay green"]
+    SIM --> A["A — Assess"]
+    R --> A
     A -- "blockers" --> FA["F — Fix"]
     FA --> A
-    A -- "pass" --> T["T — Tighten"]
+    A -- "/craft pass" --> T["T — Tighten"]
     T -- "P0" --> FT["F — Fix P0"]
     FT --> T
     T -- "pass; non-P0 forwarded" --> S["S — Sharpen"]
+    A -- "/craft-lite pass" --> S
 ```
 
 ## Contents
@@ -32,6 +35,7 @@ flowchart LR
 skills/
 ├── craft/                    # Autonomous CRAFTS workflow
 ├── craft-hitl/               # CRAFTS with a TODO(human) Render seam
+├── craft-lite/               # CRAFTS without T; simplify at end of R
 ├── guided-tour/              # One-concept-at-a-time codebase teaching
 └── security-and-hardening/   # Threat modeling and on-demand security references
 
@@ -62,7 +66,13 @@ CRAFTS is a sequential delivery workflow:
 | **T**ighten | `craft-security-review` | Bundled final-diff security review; only P0 findings block |
 | **S**harpen | `craft-sharpener` | Durable documentation and process learning |
 
-Use `/craft` for autonomous work. Use `/craft-hitl` when Render must pause at a specific `TODO(human)` seam.
+| Command | Path | When |
+| --- | --- | --- |
+| `/craft` | `C → counsel → R → A → F → T → S` | Default. No short path. |
+| `/craft-hitl` | Same as `/craft`, HITL Render | A `TODO(human)` seam is reserved. |
+| `/craft-lite` | `C → counsel → R → simplify → A → F → S` | Tighten is out of scope (prototype, spike). |
+
+`/craft-lite` is an adapter on `/craft`: after Render is green it runs a `code-simplifier` pass on the Render diff and re-runs focused tests (they must stay green), then Assess and Fix as usual, then Sharpen with an empty T finding list. It does not spawn `craft-security-review`. Metrics use `--mode lite`.
 
 ### Plan counsel gate and security triggers
 
@@ -88,7 +98,7 @@ cp -R skills/* /path/to/project/.agents/skills/
 cp -R agents/* /path/to/project/.agents/agents/
 ```
 
-Then invoke `/craft` or `/craft-hitl`. Ensure the host supports the agent frontmatter and bundled security-review guidance.
+Then invoke `/craft`, `/craft-hitl`, or `/craft-lite`. Ensure the host supports the agent frontmatter and bundled security-review guidance. `/craft-lite` also needs a host `code-simplifier` agent (or the conductor applies the same diff-scoped pass).
 
 ### Author-machine live install (symlinks)
 
@@ -98,7 +108,7 @@ On the author's machine, the listed entries under `~/.agents` point at this repo
 for f in craft-builder craft-evaluator craft-planner craft-plan-security craft-security-review craft-sharpener craft-plan-feasibility craft-plan-scope; do
   ln -sf ~/Projects/agent-utilities/agents/$f.md ~/.agents/agents/$f.md
 done
-for skill in craft craft-hitl guided-tour security-and-hardening; do
+for skill in craft craft-hitl craft-lite guided-tour security-and-hardening; do
   ln -sfn ~/Projects/agent-utilities/skills/$skill ~/.agents/skills/$skill
 done
 ```

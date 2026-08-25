@@ -5,12 +5,12 @@ argument-hint: "Optional: hitl"
 icon: Hammer
 description: >-
   Phase-gate execution workflow. Always C→R→A→F→T→S. Use /craft-hitl when
-  Render contains a human-owned decision seam.
+  Render contains a human-owned decision seam. Use /craft-lite to skip T.
 ---
 
 # CRAFTS Workflow
 
-Every run is `C → counsel → R → A → F → T → S`. There is no short path. Use `/craft-hitl` when Render must pause at a `TODO(human)` seam.
+Every run is `C → counsel → R → A → F → T → S`. There is no short path. Use `/craft-hitl` when Render must pause at a `TODO(human)` seam. Use `/craft-lite` when Tighten is out of scope.
 
 ## Core contract
 
@@ -37,10 +37,10 @@ At the start of the run, once. Infer `--kind` from the **user request**, not fro
 | `docs` | skills, ADRs, README, comments-as-docs |
 | `chore` | deps, config, CI, version, metrics plumbing |
 
-Do not invent extra kinds. Security is `security_triggers` on C, not a kind. HITL is `--mode hitl`, not a kind.
+Do not invent extra kinds. Security is `security_triggers` on C, not a kind. HITL is `--mode hitl`, not a kind. Lite is `--mode lite`, not a kind.
 
 ```bash
-RUN=$(craft-metrics start --kind feature|bugfix|refactor|scaffold|docs|chore --mode full|hitl --host pi|claude-code --cwd "$PWD")
+RUN=$(craft-metrics start --kind feature|bugfix|refactor|scaffold|docs|chore --mode full|hitl|lite --host pi|claude-code --cwd "$PWD")
 ```
 
 Keep `$RUN` for the rest of the session. If `start` is missed, `craft-metrics current --cwd "$PWD"` may recover an id the host already opened. Wrong guess: `craft-metrics kind --run "$RUN" --kind feature` once, after C, not later.
