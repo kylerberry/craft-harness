@@ -3,10 +3,10 @@ name: craft-plan-feasibility
 description: Counsel lens for whether a CRAFTS plan is executable and internally coherent.
 context: none
 tools:
-  allow:
-    - read
-    - grep
-    - glob
+  - read
+  - grep
+  - find
+extensions:
 input_schema:
   properties:
     prompt:

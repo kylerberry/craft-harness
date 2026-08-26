@@ -3,10 +3,10 @@ name: craft-plan-security
 description: Pre-Render security counsel for plans with declared security triggers.
 context: none
 tools:
-  allow:
-    - read
-    - grep
-    - glob
+  - read
+  - grep
+  - find
+extensions:
 input_schema:
   properties:
     prompt:

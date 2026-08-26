@@ -3,10 +3,10 @@ name: craft-plan-scope
 description: Counsel lens for whether a CRAFTS plan covers exactly the acceptance criteria.
 context: none
 tools:
-  allow:
-    - read
-    - grep
-    - glob
+  - read
+  - grep
+  - find
+extensions:
 input_schema:
   properties:
     prompt:

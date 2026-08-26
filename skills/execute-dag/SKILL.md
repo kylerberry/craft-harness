@@ -54,6 +54,7 @@ The supervisor creates every node worktree before dispatch. Never use the subage
 ```
 runs.run(`node-${id}`, {
   agent: "node-conductor",
+  model: "inherit",
   cwd: <meta.repo>/tmp/worktree-<id>,
   worktree: false,
   skill: <protocol>,
@@ -62,7 +63,7 @@ runs.run(`node-${id}`, {
 })
 ```
 
-`worktree: false` is intentional: the supervisor-created Git worktree already provides isolation, and runtime-managed worktrees are automatically removed. Each node still has one isolated writer.
+`model: "inherit"` pins the conductor to the current parent session model, even when cached agent overrides differ. `worktree: false` is intentional: the supervisor-created Git worktree already provides isolation, and runtime-managed worktrees are automatically removed. Each node still has one isolated writer.
 
 Run one wave through `workflowScript`. Fill slots from the current wave → wait for completions → repeat until every node in that wave is terminal. Then apply the merge policy. Do not start the next wave first.
 
@@ -100,7 +101,7 @@ Failed/blocked nodes still freeze all transitive dependents in both modes. Never
 1. **One writer per worktree.** Every node-conductor gets a distinct supervisor-created Git worktree under `<meta.repo>/tmp/` and launches with that path as `cwd`. Never share a tree between nodes or ask the runtime to wrap it in another worktree.
 2. **Depth 2, no deeper.** node-conductor is the only child you launch with the subagent tool. Conductors may spawn only protocol-directed phase agents (`craft-planner`, counsel, `craft-builder`, `craft-code-simplifier`, `craft-evaluator`, `craft-security-review`, `craft-sharpener`). `craft-lite` must not spawn `craft-security-review`. Anything else fails the node.
 3. **Dependencies are merged code, not context.** A node's payload contains its own spec and the run protocol only — never the DAG, sibling payloads, or other nodes' transcripts.
-4. **No model fallback logic.** Provider-level availability is handled by the environment. A failed model is a failed node: report and freeze.
+4. **Do not override phase model routing.** The conductor inherits the parent model. Protocol-directed CRAFTS children use each phase agent's configured primary model and ordered fallbacks. The supervisor and conductor never invent, reorder, or manually switch those models. An exhausted configured fallback chain is a failed model result: report and freeze.
 5. **Merge-back is yours.** Conductors commit in their worktree; only the supervisor merges into the base branch.
 6. **Do not put `--merge` or `--protocol` on dag.json nodes.** Those are run policy.
 

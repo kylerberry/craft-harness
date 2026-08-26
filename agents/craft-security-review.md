@@ -3,10 +3,10 @@ name: craft-security-review
 description: T — Tighten review of the final diff; only P0 security issues block progress.
 context: none
 tools:
-  allow:
-    - read
-    - grep
-    - glob
+  - read
+  - grep
+  - find
+extensions:
 input_schema:
   properties:
     prompt:

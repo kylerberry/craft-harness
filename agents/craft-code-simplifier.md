@@ -4,13 +4,13 @@ description: Behavior-preserving simplification of a recent diff. CRAFTS R-exit 
 command: craft-code-simplifier
 context: none
 tools:
-  allow:
-    - read
-    - write
-    - edit
-    - grep
-    - glob
-    - bash
+  - read
+  - write
+  - edit
+  - grep
+  - find
+  - bash
+extensions:
 input_schema:
   properties:
     prompt:

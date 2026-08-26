@@ -3,10 +3,10 @@ name: craft-builder
 description: Advise R or F with test-first implementation steps or minimal fixes for blocking findings.
 context: none
 tools:
-  allow:
-    - read
-    - grep
-    - glob
+  - read
+  - grep
+  - find
+extensions:
 input_schema:
   properties:
     prompt:

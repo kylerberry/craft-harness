@@ -3,10 +3,10 @@ name: craft-planner
 description: Run C — Conceptualize to define scope, tests, risks, gates, and an executable plan.
 context: none
 tools:
-  allow:
-    - read
-    - grep
-    - glob
+  - read
+  - grep
+  - find
+extensions:
 input_schema:
   properties:
     prompt:

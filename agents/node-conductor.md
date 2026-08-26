@@ -1,17 +1,16 @@
 ---
 name: node-conductor
 description: Conducts ONE DAG node end-to-end through a named protocol skill (craft, craft-hitl, or craft-lite), spawning each directed phase subagent sequentially and executing the implementation itself in this session's worktree.
-model: openai-codex/gpt-5.6-terra
 context: none
 tools:
-  allow:
-    - subagent
-    - read
-    - grep
-    - glob
-    - bash
-    - edit
-    - write
+  - subagent
+  - read
+  - grep
+  - find
+  - bash
+  - edit
+  - write
+extensions:
 color: "#8b5cf6"
 icon: Network
 priority: 100

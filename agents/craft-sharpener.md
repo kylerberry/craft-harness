@@ -3,10 +3,10 @@ name: craft-sharpener
 description: Run S — Sharpen to identify exact durable documentation and memory updates.
 context: none
 tools:
-  allow:
-    - read
-    - grep
-    - glob
+  - read
+  - grep
+  - find
+extensions:
 input_schema:
   properties:
     prompt:

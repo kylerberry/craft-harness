@@ -3,10 +3,10 @@ name: craft-evaluator
 description: Run A — Assess for correctness, type safety, reuse, and verification gaps.
 context: none
 tools:
-  allow:
-    - read
-    - grep
-    - glob
+  - read
+  - grep
+  - find
+extensions:
 input_schema:
   properties:
     prompt:
