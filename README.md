@@ -1,6 +1,6 @@
 # Agent Utilities
 
-A distributable CRAFTS toolkit for AI coding agents. It mirrors the current global `~/.agents` CRAFTS workflow and its role agents, including bundled security review guidance.
+A distributable CRAFTS toolkit for AI coding agents. It mirrors the current global `~/.agents` CRAFTS workflow and its role agents, including bundled security review guidance — plus a DAG layer (`/decompose-to-dag`, `/execute-dag`, and the `node-conductor` agent) that slices multi-node work into supervised CRAFTS runs.
 
 ```mermaid
 flowchart LR
@@ -35,8 +35,9 @@ skills/
 ├── craft/                    # Autonomous CRAFTS workflow
 ├── craft-hitl/               # CRAFTS with a TODO(human) Render seam
 ├── craft-lite/               # CRAFTS without T
-├── guided-tour/              # One-concept-at-a-time codebase teaching
-└── security-and-hardening/   # Threat modeling and on-demand security references
+├── decompose-to-dag/         # Spec → validated dag.json artifact
+├── execute-dag/              # Supervised DAG execution (wave barrier)
+└── guided-tour/              # One-concept-at-a-time codebase teaching
 
 agents/
 ├── craft-planner.md          # C — Conceptualize
@@ -47,7 +48,8 @@ agents/
 ├── craft-security-review.md  # T — Tighten final-diff review (P0 gate)
 ├── craft-sharpener.md        # S — Sharpen
 ├── craft-plan-feasibility.md # Plan counsel: executable here & internally consistent
-└── craft-plan-scope.md       # Plan counsel: exactly the criteria, no more
+├── craft-plan-scope.md       # Plan counsel: exactly the criteria, no more
+└── node-conductor.md         # Conducts one DAG node through a CRAFTS protocol
 ```
 
 ## CRAFTS at a glance
@@ -88,6 +90,45 @@ Every task then runs the **plan counsel gate** between C and R:
 
 Tighten maps every declared trust boundary to evidence, a P0 finding, or explicit non-applicability. It returns only P0 findings as blockers; Sharpen selects the project's existing memory sink for all non-P0 findings and the conductor records them. Security agents carry bundled review guidance with no external skill dependency. Role reports require named semantic fields; JSON is optional unless the host enforces a schema.
 
+## DAG workflow
+
+A single CRAFTS run stays in one session. When a spec slices into several independently verifiable outcomes, decompose first and execute as a supervised DAG:
+
+```mermaid
+flowchart LR
+    SPEC["Spec / issue / request"] --> DEC["/decompose-to-dag"]
+    DEC --> DAG["dag.json (five-field nodes)"]
+    DAG --> APPROVE{"User approves"}
+    APPROVE --> EXE["/execute-dag supervisor"]
+    EXE --> WAVE["Wave barrier: max 3 node-conductors"]
+    WAVE --> NC["node-conductor runs a CRAFTS protocol per node"]
+    NC --> MERGE["Supervisor merges passed nodes"]
+    MERGE --> WAVE
+    MERGE --> REPORT["Final report"]
+```
+
+### `/decompose-to-dag`
+
+Turns a spec, issue, or free-form request into a validated `dag.json` written next to the work. Each node has exactly five fields — `id`, `intent`, `change_spec`, `acceptance_criteria`, `depends_on` — and one independently verifiable outcome; `depends_on` exists only where a node literally cannot be built or verified without another's output. Material uncertainty becomes a probe node whose criteria demand a durable, mergeable artifact, never a report. The skill validates the graph (unique ids, acyclic, testable criteria, no bundled outcomes, no intent smells) and runs an adversarial review pass before presenting a summary table. It stops at the artifact — implementation belongs to `/execute-dag`, and only after the user approves the DAG.
+
+### `/execute-dag`
+
+Executes an approved `dag.json` as the supervisor: it owns dispatch, merging, and reporting, and never implements node work itself.
+
+```text
+/execute-dag [--merge auto|hitl] [--protocol craft|craft-hitl|craft-lite] [dag.json]
+```
+
+- `--merge auto` (default): after a wave is terminal, merge passed nodes sequentially into the base branch, clean up their worktrees, then open the next wave.
+- `--merge hitl`: present a per-node review table (status, branch, worktree path, diffstat, evidence) and stop; nothing merges and no worktree is removed without explicit approval.
+- `--protocol` passes through to every node-conductor. Default `craft`; use `craft-hitl` only when nodes actually have `TODO(human)` seams; `craft-lite` skips Tighten.
+
+Dispatch is a **wave barrier**: a node is ready when every dependency is passed *and merged*; at most 3 node-conductors run per wave; the next wave opens only after the current one is terminal and its approved passed nodes are merged. Each node gets a supervisor-created Git worktree (`<repo>/tmp/worktree-<id>`, branch `dag/<id>`) — never a runtime-managed disposable worktree — so failed nodes stay browsable for diagnosis. An integration conflict gets exactly one re-derivation (`-attempt-2`); a failed or blocked node freezes its transitive dependents in both merge modes.
+
+### `node-conductor`
+
+The `node-conductor` agent conducts exactly one DAG node end-to-end. It loads the named protocol skill (`craft`, `craft-hitl`, or `craft-lite`), spawns each directed phase agent sequentially, executes the implementation itself in its worktree — including the required R-exit simplify gate — and commits with the node id prefix (`[n3] ...`). Fanout is depth 2: the supervisor launches only node-conductors, and a conductor launches only protocol phase agents. Dependencies arrive as already-merged code in the worktree, never as transcripts or sibling payloads. `craft-lite` nodes never spawn `craft-security-review`.
+
 ## Installation
 
 Copy the directories into either a project's `.agents/` folder or your global `~/.agents/` folder:
@@ -98,17 +139,17 @@ cp -R skills/* /path/to/project/.agents/skills/
 cp -R agents/* /path/to/project/.agents/agents/
 ```
 
-Then invoke `/craft`, `/craft-hitl`, or `/craft-lite`. Ensure the host supports the agent frontmatter and bundled security-review guidance.
+Then invoke `/craft`, `/craft-hitl`, or `/craft-lite`. Ensure the host supports the agent frontmatter and bundled security-review guidance; `/execute-dag` additionally requires a subagent runtime with scripted orchestration (pi's `workflowScript`/`runs.run`).
 
 ### Author-machine live install (symlinks)
 
 On the author's machine, the listed entries under `~/.agents` point at this repository so the global workflow always matches git — one copy, no sync step:
 
 ```bash
-for f in craft-builder craft-code-simplifier craft-evaluator craft-planner craft-plan-security craft-security-review craft-sharpener craft-plan-feasibility craft-plan-scope; do
+for f in craft-builder craft-code-simplifier craft-evaluator craft-planner craft-plan-security craft-security-review craft-sharpener craft-plan-feasibility craft-plan-scope node-conductor; do
   ln -sf ~/Projects/agent-utilities/agents/$f.md ~/.agents/agents/$f.md
 done
-for skill in craft craft-hitl craft-lite guided-tour security-and-hardening; do
+for skill in craft craft-hitl craft-lite guided-tour decompose-to-dag execute-dag; do
   ln -sfn ~/Projects/agent-utilities/skills/$skill ~/.agents/skills/$skill
 done
 ```
@@ -117,7 +158,7 @@ Edits through these links change the repository files; commit from this reposito
 
 ## Model routing
 
-Agent frontmatter intentionally sets **no `model`** — in pi, frontmatter outranks `agentOverrides`, so a baked-in value would shadow each host's routing. Route per host via `subagents.agentOverrides` (or your harness's equivalent). The intended tiering:
+Agent frontmatter intentionally sets **no `model`** — with one deliberate exception, noted below — because in pi frontmatter outranks `agentOverrides`, so a baked-in value would shadow each host's routing. Route per host via `subagents.agentOverrides` (or your harness's equivalent). The intended tiering:
 
 | Role | Tier | Author-machine pin |
 | --- | --- | --- |
@@ -130,6 +171,9 @@ Agent frontmatter intentionally sets **no `model`** — in pi, frontmatter outra
 | A — evaluator | heavy, different family from builder | `xai/grok-4.6` |
 | T — tighten | medium, different family from builder | `openai-codex/gpt-5.6-terra` |
 | S — sharpener | light | `openai-codex/gpt-5.6-luna` |
+| DAG — `node-conductor` | medium, pinned (see below) | `openai-codex/gpt-5.6-terra` |
+
+`node-conductor` is the one deliberate exception to that rule: its frontmatter pins `openai-codex/gpt-5.6-terra` so every DAG node gets the same conductor regardless of host overrides — it is a node's sole orchestrator and sole writer, not an advisory lens a host should re-tier per phase.
 
 Give every pin a `fallbackModels` chain (rate-limit and overload errors walk it automatically); keeping subscription-capped providers out of primary positions and fallback-only models in the chain degrades gracefully instead of failing the phase.
 
