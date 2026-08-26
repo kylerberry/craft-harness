@@ -7,6 +7,8 @@ tools:
   - grep
   - find
 extensions:
+acceptanceRole: read-only
+completionGuard: false
 input_schema:
   properties:
     prompt:

@@ -4,27 +4,22 @@ A distributable CRAFTS toolkit for AI coding agents. It mirrors the current glob
 
 ```mermaid
 flowchart LR
-    C["C — Conceptualize"] --> FEAS["Feasibility counsel"]
-    C --> SCOPE["Scope counsel"]
-    C -. "security triggers" .-> PLANSEC["Plan-security counsel"]
+    C["C — Conceptualize"] --> COUNSEL["craft-counsel: feasibility + coherence + scope (+ security when triggered)"]
 
-    FEAS --> GATE{"Blocking findings?"}
-    SCOPE --> GATE
-    PLANSEC --> GATE
+    COUNSEL --> GATE{"Blocking findings?"}
     GATE -- "yes" --> REVISE["C revises and dispositions"]
-    REVISE -. "no re-review" .-> R["R — Render"]
+    REVISE -. "no re-review" .-> R["R — Render (conductor simplifies inline, tests stay green)"]
     GATE -- "no" --> R
 
     R -. "HITL seam" .-> HUMAN["TODO(human) pause"]
     HUMAN --> R
-    R --> SIM["craft-code-simplifier; tests stay green"]
-    SIM --> A["A — Assess"]
+    R --> A["A — Assess"]
     A -- "blockers" --> FA["F — Fix"]
     FA --> A
     A -- "/craft pass" --> T["T — Tighten"]
     T -- "P0" --> FT["F — Fix P0"]
     FT --> T
-    T -- "pass; non-P0 forwarded" --> S["S — Sharpen"]
+    T -- "pass; non-P0 forwarded" --> S["S — Sharpen (conductor, inline)"]
     A -- "/craft-lite pass" --> S
 ```
 
@@ -41,14 +36,11 @@ skills/
 
 agents/
 ├── craft-planner.md          # C — Conceptualize
+├── craft-counsel.md          # Plan counsel: feasibility, coherence, scope (+ security when triggered)
 ├── craft-builder.md          # R/F — Render and Fix
-├── craft-code-simplifier.md  # R-exit simplify gate
+├── craft-code-simplifier.md  # Standalone simplify pass (not spawned by CRAFTS — Render does this inline)
 ├── craft-evaluator.md        # A — Assess
-├── craft-plan-security.md    # Pre-implementation security counsel lens
 ├── craft-security-review.md  # T — Tighten final-diff review (P0 gate)
-├── craft-sharpener.md        # S — Sharpen
-├── craft-plan-feasibility.md # Plan counsel: executable here & internally consistent
-├── craft-plan-scope.md       # Plan counsel: exactly the criteria, no more
 └── node-conductor.md         # Conducts one DAG node through a CRAFTS protocol
 ```
 
@@ -61,20 +53,20 @@ CRAFTS is a sequential delivery workflow:
 | Phase | Role | Purpose |
 | --- | --- | --- |
 | **C**onceptualize | `craft-planner` | Scope, acceptance criteria, tests, plan, and security triggers |
-| *Plan counsel* | `craft-plan-feasibility` · `craft-plan-scope` (+ `craft-plan-security` when triggered) | Independent one-pass review of the C plan before Render |
-| **R**ender | `craft-builder` then `craft-code-simplifier` | Test-first implementation, then required simplify exit gate |
-| **A**ssess | `craft-evaluator` | Independent review of implementation and tests |
+| *Plan counsel* | `craft-counsel` (single reviewer, different model family from C) | Independent one-pass review of the C plan before Render: feasibility, coherence, scope, and security when triggered |
+| **R**ender | `craft-builder` | Test-first implementation, then a required inline simplify pass (conductor, no spawn) |
+| **A**ssess | `craft-evaluator` (different model family from R) | Independent review of implementation and tests |
 | **F**ix | `craft-builder` | Minimal fixes for blocking findings |
-| **T**ighten | `craft-security-review` | Bundled final-diff security review; only P0 findings block |
-| **S**harpen | `craft-sharpener` | Durable documentation and process learning |
+| **T**ighten | `craft-security-review` (different model family from R) | Bundled final-diff security review; only P0 findings block |
+| **S**harpen | conductor (inline, no spawn) | Durable documentation and process learning |
 
 | Command | Path | When |
 | --- | --- | --- |
 | `/craft` | `C → counsel → R → A → F → T → S` | Default. No short path. |
 | `/craft-hitl` | Same as `/craft`, HITL Render | A `TODO(human)` seam is reserved. |
-| `/craft-lite` | `C → counsel → R → A → F → S` | Tighten is out of scope (prototype, spike). |
+| `/craft-lite` | `C → R → A → F → S` | Plan counsel and Tighten are out of scope (prototype, spike). |
 
-Every protocol runs the R-exit `craft-code-simplifier` gate after Render is green (tests must stay green; unrecoverable simplify is reverted). `/craft-lite` only skips Tighten and uses `--mode lite`.
+Every protocol runs a required Render-exit simplify pass after tests go green (tests must stay green; unrecoverable simplify is reverted) — the conductor performs it directly, not as a separate agent spawn. `/craft-lite` skips plan counsel and Tighten and uses `--mode lite`, which the metrics store enforces by rejecting `counsel`/`T` phase entries under that mode.
 
 ### Plan counsel gate and security triggers
 
@@ -82,13 +74,13 @@ C emits `security_triggers` from a closed vocabulary (`trust-boundary-change`, `
 
 Every task then runs the **plan counsel gate** between C and R:
 
-1. The C report goes verbatim to independent read-only reviewers: feasibility-and-coherence and scope guardian always; security only when a trigger is declared. They may run in parallel; none sees another's findings first.
-2. Any blocking finding returns all reports to C, which revises once and dispositions every blocking finding: `adopted` (with the plan change) or `rejected` (with rationale).
+1. The C report goes verbatim to `craft-counsel`, a single independent-model reviewer: feasibility, coherence, and scope always; security only when a trigger is declared.
+2. Any blocking finding returns the report to C, which revises once and dispositions every blocking finding: `adopted` (with the plan change) or `rejected` (with rationale).
 3. Render begins only when every blocking finding has a disposition — dispositions are the gate, not agreement. There is no counsel re-review round.
-4. Feasibility reports `probe_required` instead of guessing when an assumption needs execution to settle; the user supplies evidence, descopes, or confirms.
-5. Counsel reports and dispositions forward to Assess, which treats thin rejections or cosmetic adoptions as blocking findings.
+4. The feasibility lens reports `probe_required` instead of guessing when an assumption needs execution to settle; the user supplies evidence, descopes, or confirms.
+5. Counsel findings and dispositions forward to Assess, which treats thin rejections or cosmetic adoptions as blocking findings.
 
-Tighten maps every declared trust boundary to evidence, a P0 finding, or explicit non-applicability. It returns only P0 findings as blockers; Sharpen selects the project's existing memory sink for all non-P0 findings and the conductor records them. Security agents carry bundled review guidance with no external skill dependency. Role reports require named semantic fields; JSON is optional unless the host enforces a schema.
+Tighten maps every declared trust boundary to evidence, a P0 finding, or explicit non-applicability. It returns only P0 findings as blockers; the conductor selects the project's existing memory sink for all non-P0 findings and records them directly during Sharpen — no separate agent. Security agents carry bundled review guidance with no external skill dependency. Role reports require named semantic fields; JSON is optional unless the host enforces a schema.
 
 ## DAG workflow
 
@@ -127,7 +119,7 @@ Dispatch is a **wave barrier**: a node is ready when every dependency is passed 
 
 ### `node-conductor`
 
-The `node-conductor` agent conducts exactly one DAG node end-to-end. It loads the named protocol skill (`craft`, `craft-hitl`, or `craft-lite`), spawns each directed phase agent sequentially, executes the implementation itself in its worktree — including the required R-exit simplify gate — and commits with the node id prefix (`[n3] ...`). Fanout is depth 2: the supervisor launches only node-conductors, and a conductor launches only protocol phase agents. Dependencies arrive as already-merged code in the worktree, never as transcripts or sibling payloads. `craft-lite` nodes never spawn `craft-security-review`.
+The `node-conductor` agent conducts exactly one DAG node end-to-end. It loads the named protocol skill (`craft`, `craft-hitl`, or `craft-lite`), spawns each directed phase agent sequentially, executes the implementation itself in its worktree — performing the required R-exit simplify pass and Sharpen directly, never as a spawn — and commits with the node id prefix (`[n3] ...`). Fanout is depth 2: the supervisor launches only node-conductors, and a conductor launches only protocol phase agents. Dependencies arrive as already-merged code in the worktree, never as transcripts or sibling payloads. `craft-lite` nodes never spawn `craft-counsel` or `craft-security-review`.
 
 ## Installation
 
@@ -146,7 +138,7 @@ Then invoke `/craft`, `/craft-hitl`, or `/craft-lite`. Ensure the host supports 
 On the author's machine, the listed entries under `~/.agents` point at this repository so the global workflow always matches git — one copy, no sync step:
 
 ```bash
-for f in craft-builder craft-code-simplifier craft-evaluator craft-planner craft-plan-security craft-security-review craft-sharpener craft-plan-feasibility craft-plan-scope node-conductor; do
+for f in craft-builder craft-code-simplifier craft-counsel craft-evaluator craft-planner craft-security-review node-conductor; do
   ln -sf ~/Projects/agent-utilities/agents/$f.md ~/.agents/agents/$f.md
 done
 for skill in craft craft-hitl craft-lite guided-tour decompose-to-dag execute-dag; do
@@ -163,14 +155,11 @@ Agent frontmatter intentionally sets **no `model`** — with one deliberate exce
 | Role | Tier | Author-machine pin |
 | --- | --- | --- |
 | C — planner | heavy | `openai-codex/gpt-5.6-sol` |
-| Counsel: feasibility | medium | `zai/glm-5.2` |
-| Counsel: scope | light | `xai/grok-4.3` |
-| Counsel: security (plan mode) | medium, different family from planner | `zai/glm-5.3` |
-| R/F — builder | medium, different family from evaluator | `zai/glm-5.2` |
-| R-exit — `craft-code-simplifier` | medium, different family from builder | host default |
+| Counsel — `craft-counsel` | medium, different family from planner | `zai/glm-5.3` |
+| R/F — builder (incl. inline simplify) | medium, different family from evaluator | `zai/glm-5.2` |
 | A — evaluator | heavy, different family from builder | `xai/grok-4.6` |
 | T — tighten | medium, different family from builder | `openai-codex/gpt-5.6-terra` |
-| S — sharpener | light | `openai-codex/gpt-5.6-luna` |
+| S — sharpen (conductor, inline) | inherits the conductor's model — no separate tier | — |
 | DAG — `node-conductor` | medium, pinned (see below) | `openai-codex/gpt-5.6-terra` |
 
 `node-conductor` is the one deliberate exception to that rule: its frontmatter pins `openai-codex/gpt-5.6-terra` so every DAG node gets the same conductor regardless of host overrides — it is a node's sole orchestrator and sole writer, not an advisory lens a host should re-tier per phase.

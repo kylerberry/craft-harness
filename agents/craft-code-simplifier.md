@@ -1,6 +1,6 @@
 ---
 name: craft-code-simplifier
-description: Behavior-preserving simplification of a recent diff. CRAFTS R-exit gate and standalone pass.
+description: Behavior-preserving simplification of a recent diff. Standalone pass — CRAFTS Render performs this inline and does not spawn it.
 command: craft-code-simplifier
 context: none
 tools:

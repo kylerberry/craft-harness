@@ -14,11 +14,11 @@ Every run is `C → counsel → R → A → F → T → S`. There is no short pa
 
 ## Core contract
 
-CRAFTS is sequential: finish each gate before starting the next. Named role agents advise each phase; the conductor owns sequencing, edits, verification, and gate decisions. Counsel reviewers are the only agents that may run in parallel because they independently read the same C report.
+CRAFTS is sequential: finish each gate before starting the next. Named role agents advise each phase; the conductor owns sequencing, edits, verification, and gate decisions — including the Render-exit simplify pass and Sharpen, which the conductor performs directly rather than delegating.
 
 The canonical acceptance criteria are the provided criteria verbatim, or C-authored criteria when none were provided. C records that provenance; counsel and A receive the canonical set unchanged, and A reviews both tests and implementation against it.
 
-Host routing must preserve model-family diversity at the C→general-counsel, C→plan-security, R→A, and R→T seams. Exact models and fallback chains belong in host settings, not role prompts.
+Host routing must preserve model-family diversity at the C→counsel, R→A, and R→T seams — these are the adversarial checks, where an independent model earns its cost. Render's simplify pass, Fix, and Sharpen inherit the default model; no forced diversity. Exact models and fallback chains belong in host settings, not role prompts.
 
 Reports must be concise and structured with the named fields below. JSON is optional unless the host enforces a schema.
 
@@ -50,6 +50,8 @@ At every gate:
 ```bash
 craft-metrics enter --run "$RUN" --phase C|counsel|R|A|F|T|S --agent <role-agent>
 ```
+
+Omit `--agent` for S — the conductor performs Sharpen directly; there is no role agent to name.
 
 Immediately after the phase report is in hand, before starting the next gate:
 
@@ -88,19 +90,13 @@ Stop for unresolved requirements.
 
 ### Plan counsel
 
-Send the completed C report and canonical criteria unchanged to independent reviewers:
+Use `craft-counsel` on a different model family from C. Send the completed C report and canonical criteria unchanged.
 
-| Agent | When |
-| --- | --- |
-| `craft-plan-feasibility` | Always |
-| `craft-plan-scope` | Always |
-| `craft-plan-security` | When `security_triggers` is non-empty |
+Counsel is one pass: `C → counsel → C? → R`. One reviewer, one report, three lenses — feasibility and scope always; security only when `security_triggers` is non-empty.
 
-Counsel is one pass: `C → counsel → C? → R`. Reviewers may run in parallel and must not see one another's findings before reporting.
+Counsel returns `status`, `findings`, and `residual_risks`. Each finding carries `lens` (`feasibility` | `coherence` | `scope` | `security`), `severity`, `blocking`, `consequence`, and `required_change`. A feasibility finding may return `probe_required` with a hypothesis and required evidence rather than guessing; a security finding also carries `planned_security_tests` when relevant.
 
-General counsel returns `lens`, `status`, `findings`, and `residual_risks`; plan security returns `mode`, `status`, `findings`, `required_changes`, `planned_security_tests`, and `residual_risk`. Each finding identifies severity, whether it blocks, consequence, and required change. Feasibility may return `probe_required` with a hypothesis and required evidence rather than guessing.
-
-If any report is `blocked` or `needs-replan`, or has blocking findings, C revises once and dispositions every blocker as `adopted` with the plan change or `rejected` with rationale. Pause for required evidence, clarification, or descoping before dispositioning a blocked or `probe_required` finding. There is no counsel re-review. R starts only after every blocker has a disposition; A later audits those dispositions.
+If the report is `blocked` or `needs-replan`, or has blocking findings, C revises once and dispositions every blocker as `adopted` with the plan change or `rejected` with rationale. Pause for required evidence, clarification, or descoping before dispositioning a blocked or `probe_required` finding. There is no counsel re-review. R starts only after every blocker has a disposition; A later audits those dispositions.
 
 ### R — Render
 
@@ -110,7 +106,7 @@ Use `craft-builder` for test-first implementation guidance. Pass only the final 
 2. **Green:** implement the minimum passing change.
 3. **Refactor:** local cleanup while tests remain green. This is not the simplify gate.
 4. Run proportionate tests, type checks, lint, and formatting.
-5. **Simplify (R-exit, required):** after tests are green, spawn `craft-code-simplifier` on the Render diff only (changed lines; new files in full). If that agent is unavailable, apply the same pass yourself: preserve behavior, stay inside the diff, match repo conventions. Do not treat `/simplify` as available inside a subagent. Re-run focused tests. Stay in R until green. If simplify breaks tests, revert or fix those edits until green. If unrecoverable, revert simplify entirely, keep the last green Render, and enter A with that noted. Do not enter A red. Simplify is part of R; do not invent a metrics phase for it.
+5. **Simplify (R-exit, required):** after tests are green, review the Render diff yourself — changed lines; new files in full — for reuse, dead code, naming, and unnecessary nesting or abstraction. No separate agent spawn: this is the conductor's own pass over its own diff, behavior-preserving only (same invariants as `craft-code-simplifier`, which exists as a standalone tool but is not part of this flow). Re-run focused tests. Stay in R until green. If a simplify edit breaks tests, revert or fix it until green. If unrecoverable, revert simplify entirely, keep the last green Render, and enter A with that noted. Do not enter A red. Simplify is part of R; do not invent a metrics phase for it.
 
 #### HITL Render override
 
@@ -145,8 +141,6 @@ T returns `mode`, `status`, `trust_boundaries_reviewed`, `blocking_findings`, `n
 
 ### S — Sharpen
 
-Use `craft-sharpener`. Pass the final diff summary, verification results, issue status, durable discoveries, and T's non-P0 findings.
-
-S identifies exact documentation updates and chooses the project's existing memory sink for non-P0 findings. In HITL mode, it captures the human-owned decision and rationale when durable. The conductor applies those updates, deduplicating existing entries and excluding transient noise.
+The conductor performs Sharpen directly — no separate agent spawn. Using the final diff summary, verification results, issue status, durable discoveries, and T's non-P0 findings, identify exact documentation updates and the project's existing memory sink for non-P0 findings, deduplicating existing entries and excluding transient noise. In HITL mode, capture the human-owned decision and rationale when durable.
 
 Modify git state only when the user or repository workflow explicitly requires it.

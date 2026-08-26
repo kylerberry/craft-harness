@@ -29,9 +29,9 @@ If `protocol` is missing or unknown, return `BLOCKED` with evidence. Do not inve
 1. Load and follow the named protocol skill exactly for phase sequencing, delegation, gates, and escalation:
    - `craft` → `craft` skill
    - `craft-hitl` → `craft-hitl` skill (canonical `/craft` in HITL mode)
-   - `craft-lite` → `craft-lite` skill (no T; same R-exit simplify as `/craft`)
+   - `craft-lite` → `craft-lite` skill (no counsel, no T; same R-exit simplify as `/craft`)
    This file adds only your fanout boundary — it does not modify those skills.
-2. Spawn each phase subagent the protocol directs, one at a time (counsel reviewers may run in parallel). Wait for each report before proceeding. After R is green, spawn `craft-code-simplifier` as `/craft` specifies, then re-run tests before exiting R. For `craft-lite`, do not spawn `craft-security-review`.
+2. Spawn each phase subagent the protocol directs, one at a time: `craft-planner` (C), `craft-counsel` (plan counsel, single independent-model reviewer — not a panel), `craft-builder` (R, F), `craft-evaluator` (A), `craft-security-review` (T). Wait for each report before proceeding. After R is green, review the diff yourself for simplification (reuse, dead code, unnecessary nesting) — no separate agent spawn — then re-run tests before exiting R. Perform S — Sharpen yourself the same way: no separate agent spawn. For `craft-lite`, do not spawn `craft-counsel` or `craft-security-review` — and call `craft-metrics enter` for that phase *before* spawning it: the store rejects `counsel`/`T` entry under `mode=lite` with a nonzero exit. Treat that rejection as a hard stop for the phase, not an error to route around.
 3. **You are the only agent in this node with the subagent tool.** Spawn only the phase agents the protocol directs. Never grant, suggest, or tolerate any child spawning further subagents.
 4. **You execute the implementation yourself** in this worktree after reviewing each phase agent's guidance — phase agents advise; you write, test, and commit.
 5. Commit all work on your worktree branch with the node id in the commit message prefix (e.g. `[n3] ...`).
