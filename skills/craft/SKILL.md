@@ -64,6 +64,14 @@ craft-metrics exit --run "$RUN" --phase S --docs-touched N
 # R and F: exit with no extra fields
 ```
 
+Whenever the verification command runs — in R, after a fix in F, and after each DAG merge — record its real exit code:
+
+```bash
+craft-metrics verify --run "$RUN" --command "<cmd>" --exit-code $?
+```
+
+The store refuses `exit --phase A --verdict pass` while the last recorded verify is red. Recording an honest red result is how the gate works; omitting the call to keep the gate quiet defeats the only ground truth in the run.
+
 HITL pause/resume: `craft-metrics pause|resume --run "$RUN"`. Switch to HITL mid-run with `craft-metrics mode --run "$RUN" --mode hitl`.
 
 When the run finishes or aborts:
@@ -105,8 +113,31 @@ Use `craft-builder` for test-first implementation guidance. Pass only the final 
 1. **Red:** write the planned failing test. Return to C if it cannot be expressed.
 2. **Green:** implement the minimum passing change.
 3. **Refactor:** local cleanup while tests remain green. This is not the simplify gate.
-4. Run proportionate tests, type checks, lint, and formatting.
+4. **Verify.** Run the repository's declared verification command — the one a human PR must pass (test script, type check, lint, format). Record the real exit code:
+
+   ```bash
+   craft-metrics verify --run "$RUN" --command "<cmd>" --exit-code $?
+   ```
+
+   Record what actually ran, not what should have. A red result recorded honestly is a working gate; a green result asserted in prose is not evidence. If the repository declares no verification command, C must name one in the plan; a task with no way to be verified returns to C.
 5. **Simplify (R-exit, required):** after tests are green, review the Render diff yourself — changed lines; new files in full — for reuse, dead code, naming, and unnecessary nesting or abstraction. No separate agent spawn: this is the conductor's own pass over its own diff, behavior-preserving only (same invariants as `craft-code-simplifier`, which exists as a standalone tool but is not part of this flow). Re-run focused tests. Stay in R until green. If a simplify edit breaks tests, revert or fix it until green. If unrecoverable, revert simplify entirely, keep the last green Render, and enter A with that noted. Do not enter A red. Simplify is part of R; do not invent a metrics phase for it.
+6. **Record the decisions.** A reads a diff, which shows *what* changed and never *why*. An edge case left alone because the plan scoped it out and one left alone because it was awkward look identical. Before exiting R, write the implementation choices the plan did not dictate:
+
+   ```
+   decision:      what was chosen
+   alternatives:  what else was considered, if anything
+   rationale:     why, in one line
+   criterion:     which acceptance criterion it serves, or "incidental"
+   deviation:     yes | no — did this depart from the approved plan
+   ```
+
+   Include choices the plan left open, approaches tried and abandoned (so A does not propose them again), and any assumption you made that the plan did not state — those unstated assumptions are the ones that cause trouble later. Omit anything the plan already dictated; restating the plan is noise.
+
+   Write these in neutral voice — "chose X over Y because Z", never "I decided". They go to a blinded reviewer, and first-person phrasing is an authorship signal the scrubber cannot remove.
+
+   ```bash
+   craft-metrics exit --run "$RUN" --phase R --decisions N --plan-deviations N
+   ```
 
 #### HITL Render override
 
@@ -121,9 +152,30 @@ The conductor must not implement past, stub, or work around an unresolved human 
 
 ### A — Assess
 
-Use `craft-evaluator` on a different model family from R. Pass the canonical criteria, final C plan, counsel findings and dispositions, changed files, and verification evidence.
+Use `craft-evaluator` on a different model family from R. Pass the canonical criteria, the approved plan, prior plan-review findings and their dispositions, the implementation decision record from R, changed files, and verification evidence.
 
-A reviews the post-simplify tree. It checks the tests against the criteria, the implementation against both, and whether rejected or adopted counsel blockers were handled substantively. It returns `verdict`, `blocking_findings`, `verification_gaps`, and concise rationale. Residual style notes are optional and non-blocking; F does not apply them.
+Pass the decision record, not the Render transcript. A transcript is mostly authorship signal and re-derivable detail, and it is the single most expensive thing you could put in front of your priciest phase. The decision record carries the part a diff cannot: intent.
+
+**Compose A's payload blind.** Different-family routing removes same-model self-preference; it does not remove the larger effect, which is that naming an author shifts the verdict on identical code. Use role-neutral vocabulary — "the approved plan", "prior plan-review findings", "the change set" — and keep these out of the payload entirely:
+
+- `craft-*` agent names other than the reviewer's own, and `node-conductor`
+- model or provider ids (`zai/glm-5.2`, `grok-4.6`)
+- DAG identity: `[nN]` commit prefixes, `dag/nN` branches, `worktree-nN` paths
+- first-person attribution ("I chose", "the builder decided")
+
+Keep findings and dispositions in full — A must still judge whether a rejected blocker was rejected substantively. Strip *who produced them*, not what they said.
+
+A reviews the post-simplify tree. **The verify command already settled whether the tree is green — A does not re-adjudicate that.** A judges only what an exit code cannot:
+
+- do the tests actually encode every canonical criterion;
+- were tests weakened to pass — assertions deleted or loosened, cases skipped, fixtures rewritten to match wrong output;
+- is the implementation sound at behavior, edge cases, boundary error handling, and type safety;
+- were rejected or adopted counsel blockers handled substantively;
+- **is each plan deviation justified.** Judge the stated rationale, not the fact of deviating — plans are wrong sometimes and a good reason to depart is not a defect. A deviation with a thin, absent, or post-hoc rationale is a blocking finding; so is a change visible in the diff that departs from the plan and appears in no decision record at all.
+
+It returns `verdict`, `blocking_findings`, `verification_gaps`, and concise rationale. Residual style notes are optional and non-blocking; F does not apply them.
+
+A cannot report `verdict: pass` while the recorded verify is red — `craft-metrics exit` rejects it. A red tree is R's problem, not A's judgment call.
 
 ### F — Fix
 
@@ -133,7 +185,7 @@ Fix only blockers, apply the smallest safe change, rerun affected verification, 
 
 ### T — Tighten
 
-Use `craft-security-review` on the final diff. Pass the task goal, changed files, verification evidence, C trust boundaries and triggers, and relevant plan-security findings, dispositions, and residual risks for triggered work.
+Use `craft-security-review` on the final diff. Pass the task goal, changed files, verification evidence, declared trust boundaries and triggers, and relevant plan-security findings, dispositions, and residual risks for triggered work. Compose T's payload blind, under the same rules as A.
 
 T maps each declared C trust boundary to evidence, a P0 finding, or explicit non-applicability. Only P0 findings return to F and require T to repeat. P1/P2/P3 findings do not expand implementation scope; pass them to S.
 

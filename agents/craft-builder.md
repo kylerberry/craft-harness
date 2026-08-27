@@ -38,4 +38,6 @@ For triggered work, require the plan-security report and dispositioned blockers 
 
 # Output
 
-Return `tests`, `implementation_steps`, `files`, `verification`, `scope_guardrails`, and `blockers_or_handoff_notes` in a concise structured report.
+Return `tests`, `implementation_steps`, `files`, `verification`, `scope_guardrails`, `open_decisions`, and `blockers_or_handoff_notes` in a concise structured report.
+
+`open_decisions` names the choices the plan leaves genuinely open — where two defensible approaches exist and the plan picks neither. The conductor decides them and records what it chose; naming them up front is what stops a decision from being made silently.

@@ -35,6 +35,16 @@ Parse from the invocation (skill args or the user message). Unknown flags are an
 - Working tree clean; you are on `meta.branch` or will create nodes from it.
 - `<meta.repo>/tmp/` exists or can be created and is ignored by Git (`git check-ignore -q tmp/`). Add `tmp/` to the repository `.gitignore` before dispatch if needed.
 
+## Metrics
+
+Open a supervisor run before dispatching:
+
+```bash
+RUN=$(craft-metrics start --kind scaffold --mode dag --host pi|claude-code --cwd "<meta.repo>")
+```
+
+`--mode dag` is not a CRAFTS protocol — it marks this session as the supervisor. You never enter a CRAFTS phase; each node-conductor opens its own run in its own worktree. Your orchestration cost (dispatch, waiting, merges, verification) is bucketed as `supervisor`, which is what makes DAG overhead comparable against the node work it coordinates. Record post-merge verification against this run, and `craft-metrics end --run "$RUN"` when the DAG is terminal.
+
 ## Dispatch model — wave barrier
 
 A node is **ready** when every `depends_on` node has status `passed` *and is merged* into the base branch.
@@ -73,7 +83,17 @@ When every node in the wave is terminal:
 
 **`--merge auto`**
 
-Merge passed nodes sequentially into the base branch (git merge; resolve trivially or mark `integration-failed`). After each successful merge, remove that node's worktree with `git worktree remove <path>` and delete its temporary branch. Retain failed, blocked, or integration-failed worktrees for diagnosis. Then open the next ready wave and dispatch it. You may loop auto waves in one turn.
+Merge passed nodes sequentially into the base branch (git merge; resolve trivially or mark `integration-failed`). **After each merge, run the repository's verification command on the base branch** and record the result:
+
+```bash
+craft-metrics verify --run "$RUN" --command "<cmd>" --exit-code $?
+```
+
+A red base is an integration failure, not a node failure — each node passed alone; together they do not. Handle it exactly like a merge conflict: undo the merge, mark the node `integration-failed`, and re-dispatch once against the clean head.
+
+> **Undo before continuing.** A broken base poisons every later wave, and each subsequent merge makes the bisect harder. If the merge is still the branch tip, `git reset --hard HEAD~1`; otherwise `git revert -m 1 <merge-sha>`. Check `git status` first and never discard a dirty tree you did not create. Do not proceed to the next merge with the base red.
+
+After each successful, verified merge, remove that node's worktree with `git worktree remove <path>` and delete its temporary branch. Retain failed, blocked, or integration-failed worktrees for diagnosis. Then open the next ready wave and dispatch it. You may loop auto waves in one turn.
 
 **`--merge hitl`**
 
@@ -92,7 +112,7 @@ Failed/blocked nodes still freeze all transitive dependents in both modes. Never
 ### On node result
 
 - **passed** → eligible to merge under the merge policy above. Not merged until the wave gate says so.
-- **integration-failed** (merge conflict) → re-dispatch that node once against the new head (`attempt 2` in the key); a second failure freezes it and reports.
+- **integration-failed** (merge conflict, or base verification red after the merge) → undo the merge, then re-dispatch that node once against the new head (`attempt 2` in the key); a second failure freezes it and reports.
 - **blocked/failed** → freeze transitive dependents immediately; do not wait for the wave gate.
 - No automatic retry beyond the single re-derivation above. Failures surface to the user.
 

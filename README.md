@@ -54,8 +54,8 @@ CRAFTS is a sequential delivery workflow:
 | --- | --- | --- |
 | **C**onceptualize | `craft-planner` | Scope, acceptance criteria, tests, plan, and security triggers |
 | *Plan counsel* | `craft-counsel` (single reviewer, different model family from C) | Independent one-pass review of the C plan before Render: feasibility, coherence, scope, and security when triggered |
-| **R**ender | `craft-builder` | Test-first implementation, then a required inline simplify pass (conductor, no spawn) |
-| **A**ssess | `craft-evaluator` (different model family from R) | Independent review of implementation and tests |
+| **R**ender | `craft-builder` | Test-first implementation, a required inline simplify pass (conductor, no spawn), and a decision record of choices the plan did not dictate |
+| **A**ssess | `craft-evaluator` (different model family from R, blinded) | Judges what an exit code cannot: do tests encode the criteria, were they weakened to pass, is the implementation sound |
 | **F**ix | `craft-builder` | Minimal fixes for blocking findings |
 | **T**ighten | `craft-security-review` (different model family from R) | Bundled final-diff security review; only P0 findings block |
 | **S**harpen | conductor (inline, no spawn) | Durable documentation and process learning |
@@ -169,7 +169,10 @@ Give every pin a `fallbackModels` chain (rate-limit and overload errors walk it 
 ## Design principles
 
 - **Acceptance criteria remain the reference.** Assess reviews the test suite against the canonical criteria—provided verbatim or C-authored when absent—not just passing tests.
+- **A diff shows what changed, never why.** Render records the choices the plan did not dictate — alternatives weighed, assumptions made, approaches abandoned — each marked for whether it deviated from the plan. Without it, an edge case skipped because the plan scoped it out is indistinguishable from one skipped because it was awkward. Assess receives that record rather than the Render transcript: a transcript is mostly authorship signal and re-derivable detail, and it is the most expensive thing that could be put in front of the priciest phase.
+- **Verification is an exit code, not a claim.** The repository's declared verify command is recorded with its real exit code (`craft-metrics verify`), and the store refuses an A `pass` verdict while that result is red. Reviewers never re-adjudicate whether the tree is green; they judge whether the tests deserve to be trusted. In DAG runs the supervisor re-verifies the base branch after each merge, so nodes that pass alone but break together surface as integration failures.
 - **Independent review reduces correlated blind spots.** Builders do not approve their own work; plan counsel challenges the plan before code exists, and elevated plan review is independent of planning and implementation.
+- **Adversarial reviewers judge blind.** A and T run on a different model family *and* receive payloads stripped of authorship — agent names, model ids, and DAG node/branch identity. Different-family routing removes same-model self-preference; blinding removes the larger effect, where naming an author shifts the verdict on identical code. The pi extension scrubs leaks at the `tool_call` boundary and records the count, so blinding is enforced rather than merely instructed.
 - **Security starts in planning.** Threat boundaries and abuse cases are considered before code exists, then rechecked against the final diff.
 - **Knowledge compounds.** Sharpen records durable lessons without turning ordinary fixes into documentation churn.
 - **Humans own consequential judgment.** HITL reserves explicit seams for people while the agent handles surrounding implementation and verification.

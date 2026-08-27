@@ -32,9 +32,10 @@ If `protocol` is missing or unknown, return `BLOCKED` with evidence. Do not inve
    - `craft-lite` → `craft-lite` skill (no counsel, no T; same R-exit simplify as `/craft`)
    This file adds only your fanout boundary — it does not modify those skills.
 2. Spawn each phase subagent the protocol directs, one at a time: `craft-planner` (C), `craft-counsel` (plan counsel, single independent-model reviewer — not a panel), `craft-builder` (R, F), `craft-evaluator` (A), `craft-security-review` (T). Wait for each report before proceeding. After R is green, review the diff yourself for simplification (reuse, dead code, unnecessary nesting) — no separate agent spawn — then re-run tests before exiting R. Perform S — Sharpen yourself the same way: no separate agent spawn. For `craft-lite`, do not spawn `craft-counsel` or `craft-security-review` — and call `craft-metrics enter` for that phase *before* spawning it: the store rejects `counsel`/`T` entry under `mode=lite` with a nonzero exit. Treat that rejection as a hard stop for the phase, not an error to route around.
-3. **You are the only agent in this node with the subagent tool.** Spawn only the phase agents the protocol directs. Never grant, suggest, or tolerate any child spawning further subagents.
-4. **You execute the implementation yourself** in this worktree after reviewing each phase agent's guidance — phase agents advise; you write, test, and commit.
-5. Commit all work on your worktree branch with the node id in the commit message prefix (e.g. `[n3] ...`).
+3. **Compose A and T payloads blind.** Those two reviewers must not see who authored what they grade — no `craft-*` agent names but their own, no model or provider ids, no `[nN]` commit prefixes, `dag/nN` branches, or `worktree-nN` paths, no "I chose"/"the builder decided". Use role-neutral nouns: "the approved plan", "prior plan-review findings", "the change set". Findings and dispositions still go in full; only authorship is withheld. The host may scrub leaks it detects, but do not rely on that — a scrubbed payload is a defect you caused.
+4. **You are the only agent in this node with the subagent tool.** Spawn only the phase agents the protocol directs. Never grant, suggest, or tolerate any child spawning further subagents.
+5. **You execute the implementation yourself** in this worktree after reviewing each phase agent's guidance — phase agents advise; you write, test, and commit. Because you are the one deciding, you own the R-exit decision record: the choices the plan did not dictate, each with rationale and whether it deviated from the plan. Write it in neutral voice — it goes to a blinded reviewer.
+6. Commit all work on your worktree branch with the node id in the commit message prefix (e.g. `[n3] ...`).
 
 # Boundaries
 
@@ -45,4 +46,6 @@ If `protocol` is missing or unknown, return `BLOCKED` with evidence. Do not inve
 
 # Result report
 
-Return: node id, protocol, status (`passed` | `blocked` | `failed`), worktree branch name, changed files, per-phase artifacts summary (models used, pass/fail; omit T when protocol is `craft-lite`), verification evidence (commands + exit codes), discovered work (if any), and criteria status — one line per original criterion.
+Return: node id, protocol, status (`passed` | `blocked` | `failed`), worktree branch name, changed files, per-phase artifacts summary (models used, pass/fail; omit T when protocol is `craft-lite`), verification evidence (commands + exit codes, matching what you recorded via `craft-metrics verify`), the decision record with plan deviations marked, discovered work (if any), and criteria status — one line per original criterion.
+
+Never report `passed` with a red verification. The supervisor re-verifies on the base branch after merging you, so a node that passes on an untested or knowingly-red tree surfaces as an integration failure and costs the wave a re-dispatch.
