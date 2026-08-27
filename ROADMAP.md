@@ -166,6 +166,56 @@ Before spending more design effort on tiering or blinding refinements, this is t
 number worth explaining. A 10% reduction in A's cost is worth more than eliminating
 counsel, T, and S combined.
 
+### Addendum — cause isolated
+
+Measured, not inferred. The obvious hypothesis was A→F round trips inflating A. **It is
+not that.** Counting `phase_enter` events for A per run: 29 of 31 runs enter A exactly
+once; only 2 re-enter. Round trips are rare and cannot explain the concentration.
+
+The cause is **turn count**, and cache cost that scales with it:
+
+| phase | avg turns | avg tools | avg cacheRead | cache ÷ fresh tokens |
+| --- | --- | --- | --- | --- |
+| C | 5.7 | 24.8 | 0.15M | 3.8 |
+| counsel | 8.0 | 52.6 | 0.16M | 3.1 |
+| R | 10.7 | 33.1 | 0.88M | 23.1 |
+| **A** | **20.8** | **48.3** | **3.39M** | **47.3** |
+| F | 10.2 | 21.8 | 0.65M | 12.8 |
+| T | 4.0 | 21.6 | 0.09M | 2.9 |
+| S | 1.7 | 13.6 | 0.06M | 4.7 |
+
+A runs 20.8 turns — nearly double R, 3.6× C. Every turn resends the conversation so far
+as cached input, so cache read compounds with turn count *and* with context growth per
+turn. A reads 3.39M cached tokens per invocation against C's 0.15M — 22×, which tracks
+the turn ratio multiplied by that compounding.
+
+Cache alone accounts for essentially the whole cost: 3.39M × $0.50/M (grok-4.6 cacheRead)
+≈ $1.70, against a measured average of $1.86 notional per A invocation. Fresh input is
+65k and output only 7k — A barely *writes* anything. It is paying almost entirely to
+re-read its own accumulated context.
+
+Why A takes so many turns: its checklist is the widest in the workflow — criteria
+coverage, weakened-test detection, plan-deviation judgment, maintainability, type safety,
+edge cases — and every item is verified independently against the tree rather than
+trusted from a report. Its 48.3 tool calls are second only to counsel's 52.6, but counsel
+converges in 8 turns against A's 20.8: counsel answers a narrower question per lookup,
+while A keeps digging.
+
+This reframes the lever. A's cost is not the model tier and not the initial payload
+size — those set the per-turn floor, and the floor is small. It is the **number of
+turns**, so anything that reduces A's need to loop reduces cost roughly proportionally.
+Two candidates, in order of expected leverage:
+
+1. Make weakened-test detection mechanical rather than a manual grep hunt — a coverage
+   delta or mutation-testing signal answers in one tool call what A currently explores
+   across many. See the test-weakening entry below.
+2. Narrow what A must independently re-derive, giving it pre-digested findings where the
+   derivation is not itself the point. The decision record is the first instance; whether
+   it moved the turn count is still unmeasured.
+
+Both are turn-count interventions. Model-tier changes and payload trimming address the
+smaller term.
+
 ---
 
 ## Validate attribution on a real run
