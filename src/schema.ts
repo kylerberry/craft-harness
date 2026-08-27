@@ -41,6 +41,12 @@ export interface ModelSpend {
 	turns: number;
 	events: number;
 	cost_usd: number;
+	/**
+	 * Tokens priced at list rate regardless of billing — set by `applyNotionalPricing`
+	 * at read time, not folded from events. Undefined until that pass runs, e.g. on a
+	 * `PhaseRecord` built directly in a test rather than via `Store.loadAll()`.
+	 */
+	notional_cost_usd?: number;
 	tokens: Tokens;
 }
 
@@ -57,6 +63,8 @@ export interface PhaseRecord {
 	thinking?: string;
 	tokens: Tokens;
 	cost_usd: number;
+	/** See `ModelSpend.notional_cost_usd` — same derivation, summed across models. */
+	notional_cost_usd?: number;
 	turns: number;
 	/**
 	 * Per-model split of the phase's spend. A phase routinely runs more than one model
@@ -150,6 +158,8 @@ export interface Run {
 	/** Most recent verify result. The gate on A's `pass` verdict reads this. */
 	last_verify: Verify | null;
 	verify_count: number;
+	/** Sum of phase notional costs. See `ModelSpend.notional_cost_usd`. */
+	notional_cost_usd?: number;
 }
 
 export interface PhaseExitFields {

@@ -224,13 +224,17 @@ function main(argv: string[]): void {
 		case "totals": {
 			const totals = phaseTotals(store.loadAll());
 			process.stdout.write(
-				"phase          n     cost        time      turns      in     out   cache\n",
+				"phase          n     cost     notional      time      turns      in     out   cache\n",
 			);
 			for (const [name, t] of totals) {
 				process.stdout.write(
-					`${name.padEnd(14)} ${String(t.n).padStart(3)}  $${t.cost.toFixed(4).padStart(8)}  ${(t.ms / 1000).toFixed(1).padStart(8)}s  ${String(t.turns).padStart(5)}  ${mtok(t.tokens.input)}  ${mtok(t.tokens.output)}  ${mtok(t.tokens.cacheRead)}\n`,
+					`${name.padEnd(14)} ${String(t.n).padStart(3)}  $${t.cost.toFixed(4).padStart(8)}  $${t.notional.toFixed(4).padStart(8)}  ${(t.ms / 1000).toFixed(1).padStart(8)}s  ${String(t.turns).padStart(5)}  ${mtok(t.tokens.input)}  ${mtok(t.tokens.output)}  ${mtok(t.tokens.cacheRead)}\n`,
 				);
 			}
+			process.stdout.write(
+				"\n`cost` is what you paid; `notional` is what the tokens are worth at list price\n" +
+					"(fills in $0 subscription phases). Compare phases by notional, not cost.\n",
+			);
 			return;
 		}
 		case "models": {
@@ -240,12 +244,13 @@ function main(argv: string[]): void {
 				return;
 			}
 			process.stdout.write(
-				"model                          turns      cost      in     out   cache\n",
+				"model                          turns      cost   notional      in     out   cache\n",
 			);
 			for (const m of rows) {
 				const cost = m.costless ? "     n/a" : `$${m.cost.toFixed(2).padStart(7)}`;
+				const notional = m.unpriced ? "   unpriced" : `  $${m.notional.toFixed(2).padStart(8)}`;
 				process.stdout.write(
-					`${m.model.padEnd(29)} ${String(m.turns).padStart(5)}  ${cost}  ${mtok(m.tokens.input)}  ${mtok(m.tokens.output)}  ${mtok(m.tokens.cacheRead)}\n`,
+					`${m.model.padEnd(29)} ${String(m.turns).padStart(5)}  ${cost}${notional}  ${mtok(m.tokens.input)}  ${mtok(m.tokens.output)}  ${mtok(m.tokens.cacheRead)}\n`,
 				);
 			}
 			if (rows.some((m) => m.costless)) {

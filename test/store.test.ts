@@ -5,11 +5,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store, diagnose, modelTotals, summarize } from "../src/store.ts";
 import { computeSeams } from "../src/schema.ts";
+import type { PriceTable } from "../src/pricing.ts";
 
-function tmpStore(): { store: Store; cleanup: () => void } {
+// Empty by default so tests never depend on whatever happens to be in this
+// machine's real `~/.pi/agent/models-store.json`. Pass a table explicitly for
+// tests about pricing itself.
+function tmpStore(prices: PriceTable = new Map()): { store: Store; cleanup: () => void } {
 	const dir = mkdtempSync(join(tmpdir(), "craft-metrics-"));
 	return {
-		store: new Store(join(dir, "events.jsonl")),
+		store: new Store(join(dir, "events.jsonl"), prices),
 		cleanup: () => rmSync(dir, { recursive: true, force: true }),
 	};
 }
@@ -625,6 +629,79 @@ test("doctor does not call a phaseless dag run ungated", () => {
 		const full = s.openRun({ host: "pi", cwd: "/tmp/d2", repo: "demo", mode: "full" });
 		s.recordUsage(full.run_id, { cost_usd: 1, turns: 1 });
 		assert.ok(diagnose(s.loadAll()).some((c) => c.kind === "ungated" && c.run_id === full.run_id));
+	} finally {
+		cleanup();
+	}
+});
+
+test("a priced model gets notional cost and is not flagged unpriced", () => {
+	const prices: PriceTable = new Map([
+		["openai-codex/gpt-5.6-terra", { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5 }],
+	]);
+	const { store: s, cleanup } = tmpStore(prices);
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/priced", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "R");
+		s.recordUsage(run.run_id, {
+			model: "openai-codex/gpt-5.6-terra",
+			tokens: { input: 1000, output: 500, cacheRead: 8_000_000 },
+			cost_usd: 0, // subscription-billed: real tokens, no marginal charge
+			turns: 3,
+		});
+		s.exitPhase(run.run_id, "R");
+		const got = s.get(run.run_id)!;
+		const r = got.phases.find((p) => p.name === "R")!;
+		// (1000*2 + 500*12 + 8_000_000*0.2) / 1e6
+		assert.equal(r.cost_usd, 0);
+		assert.ok(r.notional_cost_usd! > 1.6 && r.notional_cost_usd! < 1.61);
+		assert.equal(got.notional_cost_usd, r.notional_cost_usd);
+		assert.ok(!diagnose(s.loadAll()).some((c) => c.kind === "costless-model"));
+		const mt = modelTotals(s.loadAll()).find((m) => m.model === "openai-codex/gpt-5.6-terra")!;
+		assert.equal(mt.costless, true); // still true — cost_usd is genuinely $0
+		assert.equal(mt.unpriced, false); // but notional filled in, so not unpriced
+	} finally {
+		cleanup();
+	}
+});
+
+test("an unpriced model falls back to actual cost and shows n/a notional", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/unpriced", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "C");
+		s.recordUsage(run.run_id, {
+			model: "some-provider/unknown-model",
+			tokens: { input: 100, output: 50, cacheRead: 0 },
+			cost_usd: 0,
+			turns: 1,
+		});
+		s.exitPhase(run.run_id, "C");
+		const c = s.get(run.run_id)!.phases.find((p) => p.name === "C")!;
+		assert.equal(c.notional_cost_usd, 0);
+		const mt = modelTotals(s.loadAll()).find((m) => m.model === "some-provider/unknown-model")!;
+		assert.equal(mt.unpriced, true);
+		assert.ok(diagnose(s.loadAll()).some((c2) => c2.kind === "costless-model"));
+	} finally {
+		cleanup();
+	}
+});
+
+test("a metered model's notional equals its actual cost (no subscription gap)", () => {
+	const prices: PriceTable = new Map([["xai/grok-4.6", { input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0 }]]);
+	const { store: s, cleanup } = tmpStore(prices);
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/metered", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "A");
+		s.recordUsage(run.run_id, {
+			model: "xai/grok-4.6",
+			tokens: { input: 1_000_000, output: 0, cacheRead: 0 },
+			cost_usd: 2, // matches the priced rate exactly
+			turns: 1,
+		});
+		s.exitPhase(run.run_id, "A", { verdict: "pass" });
+		const a = s.get(run.run_id)!.phases.find((p) => p.name === "A")!;
+		assert.equal(a.cost_usd, 2);
+		assert.equal(a.notional_cost_usd, 2);
 	} finally {
 		cleanup();
 	}

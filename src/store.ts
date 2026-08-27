@@ -20,6 +20,7 @@ import {
 	phaseByName,
 	SCHEMA_VERSION,
 } from "./schema.ts";
+import { applyNotionalPricing, loadPriceTable, type PriceTable } from "./pricing.ts";
 
 /**
  * Grace window for attributing usage that arrives after its phase already closed.
@@ -110,8 +111,17 @@ type LogEvent =
 
 export class Store {
 	path: string;
-	constructor(path: string = defaultStorePath()) {
+	/**
+	 * Explicit price table wins over the default load from disk. Pass one in tests
+	 * so pricing behavior does not depend on what happens to be in this machine's
+	 * `~/.pi/agent/models-store.json` — that file is real, host-specific state, and
+	 * a test asserting "no price found" would otherwise pass or fail depending on
+	 * who runs it and when they last synced their model registry.
+	 */
+	prices?: PriceTable;
+	constructor(path: string = defaultStorePath(), prices?: PriceTable) {
 		this.path = path;
+		this.prices = prices;
 	}
 
 	loadEvents(): LogEvent[] {
@@ -166,7 +176,12 @@ export class Store {
 	loadAll(): Run[] {
 		const byId = new Map<string, Run>();
 		for (const ev of this.loadEvents()) fold(byId, ev);
-		return [...byId.values()];
+		const runs = [...byId.values()];
+		// Priced at read time, not folded from events: a price-table correction
+		// re-prices every historical run on the next `loadAll`, no migration needed.
+		const prices = this.prices ?? loadPriceTable();
+		for (const run of runs) applyNotionalPricing(run, prices);
+		return runs;
 	}
 
 	get(runId: string): Run | undefined {
@@ -568,9 +583,11 @@ export function summarize(runs: Run[]): string {
 	const lines: string[] = [];
 	for (const run of runs) {
 		const totalCost = run.phases.reduce((s, p) => s + p.cost_usd, 0);
+		const totalNotional = run.notional_cost_usd ?? totalCost;
 		const totalMs = run.phases.reduce((s, p) => s + p.duration_ms, 0);
+		const runNotional = totalNotional > totalCost ? `  (notional $${totalNotional.toFixed(4)})` : "";
 		lines.push(
-			`${run.run_id.slice(0, 8)}  ${(run.kind ?? "?").padEnd(8)}  ${run.mode.padEnd(5)}  ${run.outcome.padEnd(12)}  $${totalCost.toFixed(4)}  ${(totalMs / 1000).toFixed(1)}s  ${run.host}  ${run.repo ?? run.cwd}`,
+			`${run.run_id.slice(0, 8)}  ${(run.kind ?? "?").padEnd(8)}  ${run.mode.padEnd(5)}  ${run.outcome.padEnd(12)}  $${totalCost.toFixed(4)}${runNotional}  ${(totalMs / 1000).toFixed(1)}s  ${run.host}  ${run.repo ?? run.cwd}`,
 		);
 		for (const p of run.phases) {
 			if (p.name === "unattributed" && p.cost_usd === 0 && p.duration_ms === 0 && p.tool_calls === 0) continue;
@@ -578,9 +595,17 @@ export function summarize(runs: Run[]): string {
 			const guessed = p.backfilled_cost_usd > 0 ? `  (backfilled $${p.backfilled_cost_usd.toFixed(4)})` : "";
 			const blinded = p.blinding_scrubs > 0 ? `  (blinded ${p.blinding_scrubs})` : "";
 			// Tokens, not just dollars: a subscription-billed phase reports $0 and would
-			// otherwise read as no work at all.
+			// otherwise read as no work at all. Notional is what closes that gap.
 			const tok = totalTokens(p.tokens);
-			const spend = p.cost_usd > 0 ? `$${p.cost_usd.toFixed(4)}` : tok > 0 ? "$    n/a" : "$0.0000";
+			const notional = p.notional_cost_usd ?? p.cost_usd;
+			const spend =
+				p.cost_usd > 0
+					? `$${p.cost_usd.toFixed(4)}`
+					: tok > 0
+						? notional > 0
+							? `$0 (~$${notional.toFixed(4)})`
+							: "$    n/a"
+						: "$0.0000";
 			lines.push(
 				`  ${p.name.padEnd(13)}  ${spend}  ${(p.duration_ms / 1000).toFixed(1)}s  ${p.turns}t ${p.tool_calls}tools  ${fmtTokens(p.tokens)}  ${model}${guessed}${blinded}`,
 			);
@@ -664,14 +689,16 @@ export function diagnose(runs: Run[], now = Date.now(), staleHours = 12): Compla
 			}
 		}
 		for (const p of run.phases) {
-			// A model that burned tokens but reported $0 makes cross-run cost incomparable.
-			const spent = p.tokens.input + p.tokens.output + p.tokens.cacheRead;
-			if (p.cost_usd === 0 && spent > 0) {
-				for (const m of p.models) {
-					const cur = costless.get(m) ?? { events: 0, tokens: 0 };
+			for (const [model, spend] of Object.entries(p.by_model)) {
+				const spent = totalTokens(spend.tokens);
+				// A model that burned tokens but reported $0 has no price table entry
+				// either — actually unpriced, not just subscription-billed. This is the
+				// case notional pricing cannot paper over.
+				if (spend.cost_usd === 0 && spent > 0 && (spend.notional_cost_usd ?? 0) === 0) {
+					const cur = costless.get(model) ?? { events: 0, tokens: 0 };
 					cur.events += 1;
 					cur.tokens += spent;
-					costless.set(m, cur);
+					costless.set(model, cur);
 				}
 			}
 		}
@@ -680,7 +707,7 @@ export function diagnose(runs: Run[], now = Date.now(), staleHours = 12): Compla
 	for (const [model, s] of costless) {
 		out.push({
 			kind: "costless-model",
-			detail: `${model}: ${s.events} phases, ${(s.tokens / 1e6).toFixed(1)}M tokens, $0 reported — cost is not comparable across models`,
+			detail: `${model}: ${s.events} phases, ${(s.tokens / 1e6).toFixed(1)}M tokens, no price found — add it to the price table`,
 			cost_usd: 0,
 		});
 	}
@@ -696,6 +723,8 @@ export function diagnose(runs: Run[], now = Date.now(), staleHours = 12): Compla
 
 export interface PhaseTotal {
 	cost: number;
+	/** List-price value of the phase's tokens. See `ModelSpend.notional_cost_usd`. */
+	notional: number;
 	ms: number;
 	n: number;
 	turns: number;
@@ -706,8 +735,9 @@ export function phaseTotals(runs: Run[]): Map<PhaseName, PhaseTotal> {
 	const map = new Map<PhaseName, PhaseTotal>();
 	for (const run of runs) {
 		for (const p of run.phases) {
-			const cur = map.get(p.name) ?? { cost: 0, ms: 0, n: 0, turns: 0, tokens: emptyTokens() };
+			const cur = map.get(p.name) ?? { cost: 0, notional: 0, ms: 0, n: 0, turns: 0, tokens: emptyTokens() };
 			cur.cost += p.cost_usd;
+			cur.notional += p.notional_cost_usd ?? p.cost_usd;
 			cur.ms += p.duration_ms;
 			cur.turns += p.turns;
 			addTokens(cur.tokens, p.tokens);
@@ -729,9 +759,13 @@ export interface ModelTotal {
 	events: number;
 	turns: number;
 	cost: number;
+	/** List-price value of this model's tokens. See `ModelSpend.notional_cost_usd`. */
+	notional: number;
 	tokens: Tokens;
 	/** True when this model burned tokens without ever reporting a price. */
 	costless: boolean;
+	/** True when notional could not be priced either — no entry in the price table. */
+	unpriced: boolean;
 }
 
 export function modelTotals(runs: Run[]): ModelTotal[] {
@@ -745,12 +779,15 @@ export function modelTotals(runs: Run[]): ModelTotal[] {
 					events: 0,
 					turns: 0,
 					cost: 0,
+					notional: 0,
 					tokens: emptyTokens(),
 					costless: false,
+					unpriced: false,
 				};
 				cur.events += spend.events;
 				cur.turns += spend.turns;
 				cur.cost += spend.cost_usd;
+				cur.notional += spend.notional_cost_usd ?? spend.cost_usd;
 				addTokens(cur.tokens, spend.tokens);
 				map.set(model, cur);
 			}
@@ -758,6 +795,9 @@ export function modelTotals(runs: Run[]): ModelTotal[] {
 	}
 	for (const m of map.values()) {
 		m.costless = m.cost === 0 && totalTokens(m.tokens) > 0;
+		// Notional fell back to actual (both zero) despite real token volume: the
+		// price table has no entry for this model, not just a $0 subscription.
+		m.unpriced = m.costless && m.notional === 0;
 	}
 	return [...map.values()].sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens));
 }
