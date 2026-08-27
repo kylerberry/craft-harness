@@ -95,16 +95,113 @@ that, the change buys flexibility but not the evaluation it is meant to enable.
 
 ---
 
-## Also open
+## Validate attribution on a real run
 
-- **Clarify gate** — a human-approved criteria checkpoint before code exists, following
-  Spec Kit's Clarify phase. Aimed at raising first-pass acceptance of both criteria and
-  code; the cheapest approval to get is the one before implementation.
-- **Single-threaded for small work** — the DAG layer earns its overhead on genuinely
-  parallel graphs. A three-node DAG probably pays supervisor cost for nothing. Needs the
-  `supervisor` phase bucket to accumulate real data before deciding.
-- **Mode re-fold** — `fold` resolves each usage event against `run.mode` as of that moment,
-  so a `mode` event appended later relabels the run without moving its cost.
-  `craft-metrics mode` therefore does not do what it appears to. A pre-scan for the run's
-  final mode before folding usage would fix it, and would retroactively recover the
-  supervisor spend currently sitting in `unattributed`.
+**Status:** blocking · **Size:** one run plus a reading
+
+Attribution was reworked so usage is stamped with the phase open when the work started.
+Post-fix days read 100% placed — on $0.17 across 23 runs, nearly all CLI smoke tests. The
+mechanism looks right and has never seen real traffic.
+
+Until a genuine `/craft` or `/execute-dag` run lands and holds near 100%, every per-phase
+figure in this file is provisional, including the table above. This gates the honest
+version of every other item here.
+
+Check after the next real run:
+
+```bash
+craft-metrics show --last 1
+craft-metrics doctor
+```
+
+Watch for cost landing in `unattributed`, `ungated` complaints on CRAFTS runs, and
+`costless-model` entries — a model that burns tokens and reports $0 makes cross-run cost
+incomparable and would quietly invalidate tier comparisons.
+
+---
+
+## Clarify gate
+
+**Status:** explored, not started
+
+A human-approved criteria checkpoint before implementation, following GitHub Spec Kit's
+Clarify phase (Constitution → Specify → **Clarify** → Plan → Analyze → Tasks → Implement).
+
+C already emits `blocking_questions`, but AFK mode charges past them. The cheapest approval
+to obtain is the one before code exists: approving criteria costs a sentence, approving an
+implementation costs a review. This is the most direct lever on first-pass acceptance of
+both the criteria and the resulting code.
+
+Open: how it interacts with `afk_hitl_status`, and whether the gate is a distinct phase or
+a stop condition inside C. A distinct phase is measurable; a stop condition is cheaper.
+
+---
+
+## Single-threaded for small work
+
+**Status:** blocked on data
+
+The DAG layer earns its overhead on genuinely parallel graphs. A three-node DAG likely pays
+supervisor cost — worktree setup, dispatch, waiting, sequential merges — for coordination
+it does not need.
+
+Now measurable: `dag` runs bucket orchestration into the `supervisor` phase, so the ratio
+of supervisor cost to summed node cost answers this directly. Needs several real DAG runs
+first. Decide the node-count threshold from that ratio, not from taste.
+
+---
+
+## Mode re-fold
+
+**Status:** known bug · **Size:** small
+
+`fold` resolves each usage event against `run.mode` as it stands at that moment in the log.
+A `mode` event appended later therefore relabels the run without moving any cost that was
+already folded. `craft-metrics mode` does not do what it appears to do.
+
+Fix: pre-scan each run for its final mode before resolving usage. Two payoffs beyond
+correctness — mid-run mode corrections start working, and the historical `/execute-dag`
+supervisor session currently sitting in `unattributed` (~$36, the single largest orphaned
+bucket) reclassifies to `supervisor` retroactively.
+
+---
+
+## Blinding leak rate
+
+**Status:** built, unexercised
+
+The pi `tool_call` hook scrubs authorship from A and T payloads and records
+`blinding_scrubs` on the open phase. No real reviewer spawn has exercised it.
+
+The count is the interesting signal, not the scrub itself. Zero means conductors compose
+clean payloads and the net is redundant insurance. Consistently non-zero means the payload
+instructions are not landing and the net is doing the actual work — worth knowing which,
+since only one of those justifies keeping the prose rules.
+
+---
+
+## Counsel's twelve minutes
+
+**Status:** open question
+
+Counsel is the slowest phase in the workflow at ~12 min/invoke, and second priciest at
+$0.102. It was collapsed from three parallel reviewers to one for cost, not latency — so
+the twelve minutes is one reviewer's time, not a panel's.
+
+Unknown which of three causes dominates: prompt length, model tier, or the volume of plan
+it must read. Worth isolating before either accepting the cost or cutting the phase, since
+the tier work above treats "skip counsel" as its single largest saver.
+
+---
+
+## Objective test-weakening detection
+
+**Status:** idea
+
+A now judges whether tests were weakened to pass — deleted assertions, loosened matchers,
+skipped cases, fixtures rewritten to match wrong output. That judgment is currently a
+reading, and it is the one A duty with a mechanical alternative: coverage delta against the
+base, or mutation testing on changed lines.
+
+Heavier than it sounds, and mutation testing is slow enough to matter at these phase costs.
+Worth it only if A's readings prove unreliable in practice — check before building.
