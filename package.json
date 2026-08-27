@@ -1,0 +1,21 @@
+{
+	"name": "craft-metrics",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Phase-grained metrics collector for CRAFT runs (Pi + Claude Code)",
+	"bin": {
+		"craft-metrics": "./bin/craft-metrics.mjs"
+	},
+	"scripts": {
+		"test": "node --test --experimental-strip-types test/*.test.ts",
+		"cli": "node --experimental-strip-types src/cli.ts"
+	},
+	"keywords": ["pi-package", "craft"],
+	"pi": {
+		"extensions": ["./extensions/pi.ts"]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	}
+}
