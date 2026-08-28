@@ -12,37 +12,22 @@ decision can be resumed without re-deriving it.
 
 ---
 
-## Workflow versioning
+## Version bump discipline
 
-**Status:** built
+**Status:** open risk, no enforcement possible
 
-The workflow changes underneath the metrics. Phases merge, agents collapse, gates
-appear — and a phase measured across such a change describes two workflows averaged
-into one that never existed. That is worse than missing data, because it looks like
-signal.
+Run versioning is built (see `craft-metrics/README.md`). What is *not* solved: the bump
+itself is a judgment call, and nothing can check it. The rule is "bump when a phase's
+shape changes — agents added or removed, duties moved, gates introduced; not for
+wording." Miss one and v4 quietly becomes two different workflows sharing a label, which
+is the exact failure versioning was added to prevent, just harder to spot the second
+time.
 
-This already happened. Every recorded `counsel` phase used the three-agent plan-review
-panel; the single reviewer that replaced it has never run. The "twelve minutes per
-counsel" figure quoted throughout earlier drafts of this file is a panel's wall time,
-and a naive average across the change would have buried that permanently.
-
-**Declared going forward.** `craft-version` lives in `craft/SKILL.md` frontmatter and is
-passed at `craft-metrics start --craft-version N`. Bump when a phase's *shape* changes:
-agents added or removed, duties moved between phases, gates introduced. Not for wording.
-Current version is **4**; everything before the counsel collapse is **3**.
-
-**Inferred backward.** Runs predating the flag are classified from what they actually
-spawned — `craft-plan-*` and spawned `craft-code-simplifier`/`craft-sharpener` mark v3;
-`craft-counsel`, a recorded verify, blinding scrubs, or an R decision record mark v4.
-Inference is labelled as such (`~` in `show`, "(n inferred)" in `totals`), never
-presented as a declaration. Conflicting signals resolve to unknown rather than guessing,
-and a run with no distinguishing marks stays unknown.
-
-`craft-metrics totals` splits by version by default; `--all` opts back into a blended
-table for when that is genuinely what you want.
-
-Deliberately skipped: recording a git SHA alongside the version. It disambiguates
-mid-version drift but does not group, and grouping is the entire point.
+The retro-classifier cannot save this case: it infers from agent names and structural
+markers, and a missed bump means those markers are identical. Only two partial mitigations
+exist — treat any `craft/SKILL.md` phase-structure edit as requiring a bump decision in
+the same commit, and watch for a version whose per-phase numbers shift discontinuously
+mid-sequence.
 
 ---
 
@@ -61,7 +46,7 @@ silently ~$0 for subscription models (Codex on a ChatGPT plan burns real tokens 
 marginal cost), so any phase running mostly on a subscription model looked artificially
 cheap. `craft-metrics` now also computes **notional cost** — tokens priced at list rate
 regardless of billing — which is the only figure comparable across phases. Numbers below
-are notional; see `ROADMAP` entries on pricing for how it's derived and its known caveats.
+are notional; see `craft-metrics/README.md` for how it's derived and its known caveats.
 
 | phase | notional $ | share | min/invoke |
 | --- | --- | --- | --- |
@@ -153,37 +138,23 @@ that, the change buys flexibility but not the evaluation it is meant to enable.
 
 ---
 
-## Notional pricing
+## Tier-aware notional pricing
 
-**Status:** built · pi only, by design
+**Status:** known limitation · low priority
 
-`cost_usd` is what was actually billed — $0 for any model on a subscription plan (Codex
-on ChatGPT, observed as `gpt-5.6-terra`/`sol`/`luna`) even though it burns real tokens.
-That made cross-phase cost comparison silently wrong: a phase that happened to run on a
-subscription model looked free next to one that did less work on a metered model. It is
-what surfaced the corrected numbers above.
+Notional pricing is built (see `craft-metrics/README.md`). One gap remains: some Codex
+models (`sol`, `terra`) charge a higher rate above a per-request context threshold
+(`tiers: [{ inputTokensAbove: 272000, ... }]`). Tokens are summed across every request in
+a phase, so which individual requests crossed the threshold is not reconstructable from
+the aggregate — notional always prices at the base tier.
 
-`craft-metrics` now reads pi's own model price registry (`~/.pi/agent/models-store.json`,
-override via `CRAFT_METRICS_PRICES`) and prices every phase's tokens at list rate,
-regardless of how the model is actually billed. `notional_cost_usd` sits beside
-`cost_usd` everywhere — never replaces it. `cost_usd` answers "what did I pay";
-`notional_cost_usd` answers "which phase is expensive." `craft-metrics totals` and
-`models` print both.
+The result is a **systematic under-count on long-context phases**, which is precisely
+where the interesting costs are. A is the worst affected: 3.39M cached tokens per
+invocation is many requests deep into tiered territory.
 
-Derived at read time from the current price table, not stamped into the event log — a
-price correction re-prices every historical run on the next read, no migration.
-
-**Known caveats, not bugs:**
-- Some Codex tiers (`sol`, `terra`) charge a higher rate above a context threshold
-  (`tiers: [{ inputTokensAbove: 272000, ... }]`). Tokens are aggregated across requests in
-  a phase, so which individual requests crossed that threshold isn't reconstructable.
-  Notional always prices at the base tier — an under-count on long-context phases.
-- Notional uses the price table *as of now*. If a provider's rate changed during the
-  window a run's tokens were spent, notional and `cost_usd` diverge even for a fully
-  metered model. Observed on `grok-4.6`: actual $86.49 vs notional $152.24 despite being
-  metered the whole time — the rate moved, not a collection error.
-- **pi only**, deliberately — the price table lives in pi's local model registry. A
-  Claude Code equivalent would need its own price source; not built, not requested.
+Fixing it means recording per-request token counts rather than per-phase sums, which is a
+real schema change for a correction of unknown size. Worth doing only if a phase
+comparison ever turns on a margin narrow enough for the under-count to flip it.
 
 ---
 
@@ -330,17 +301,21 @@ bucket) reclassifies to `supervisor` retroactively.
 
 ---
 
-## Blinding leak rate
+## Does blinding need the safety net?
 
-**Status:** built, unexercised
+**Status:** open question, blocked on v4 runs
 
-The pi `tool_call` hook scrubs authorship from A and T payloads and records
-`blinding_scrubs` on the open phase. No real reviewer spawn has exercised it.
+The scrubber is built and records `blinding_scrubs`. The open question is whether the
+prose payload rules in `craft/SKILL.md` are doing any work, or whether the scrubber is
+carrying them.
 
-The count is the interesting signal, not the scrub itself. Zero means conductors compose
-clean payloads and the net is redundant insurance. Consistently non-zero means the payload
-instructions are not landing and the net is doing the actual work — worth knowing which,
-since only one of those justifies keeping the prose rules.
+The count answers it. Consistently zero means conductors compose clean payloads unaided
+and the scrubber is redundant insurance — keep it, but the prose is what works.
+Consistently non-zero means the instructions are not landing and the mechanical net is
+the only thing preventing leaks, which would make the same argument for mechanising other
+"the conductor should…" rules rather than writing more of them.
+
+No reviewer spawn has run under v4, so there is no data either way.
 
 ---
 
