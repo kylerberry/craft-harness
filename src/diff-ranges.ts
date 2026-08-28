@@ -20,7 +20,12 @@ export interface LineRange {
 
 /** `@@ -oldStart,oldCount +newStart,newCount @@` — counts are omitted when 1. */
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
-const FILE_HEADER = /^\+\+\+ b\/(.+)$/;
+// `b/` is optional so that `+++ /dev/null` matches too. It must: a deleted file
+// needs to clear the current file, and if the header does not match at all the
+// previous file stays current and the deletion's hunks are attributed to it.
+// Deletions happen to carry `+0,0` hunks that are dropped anyway, so this was
+// previously correct only by luck.
+const FILE_HEADER = /^\+\+\+ (?:b\/)?(.+)$/;
 
 /**
  * Parse `git diff --unified=0` output into per-file added/modified line ranges.

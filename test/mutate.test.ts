@@ -205,3 +205,62 @@ test("tracked edits and new files combine into one scope", () => {
 		{ file: "src/new.ts", start: 1, end: 5 },
 	]);
 });
+
+// --- gaps found by mutation testing, not by review ---
+
+test("a diff exactly at the line cap runs; one line over is skipped", () => {
+	// `>` vs `>=` at the boundary. Nothing previously tested the exact limit, so
+	// the off-by-one was invisible.
+	const at = ["--- a/src/a.ts", "+++ b/src/a.ts", "@@ -1,0 +1,100 @@"].join("\n");
+	const over = ["--- a/src/a.ts", "+++ b/src/a.ts", "@@ -1,0 +1,101 @@"].join("\n");
+	for (const [diff, expected] of [
+		[at, "ran"],
+		[over, "skipped"],
+	] as const) {
+		const { dir, cleanup } = tmpRepo();
+		try {
+			writeReport(dir, { files: {}, testFiles: {} });
+			const r = runMutate({
+				cwd: dir,
+				base: "HEAD",
+				maxLines: 100,
+				gitDiff: () => diff,
+				runStryker: () => ({ ok: true, timedOut: false }),
+			});
+			assert.equal(r.status, expected, `${r.lines_scoped} lines against a cap of 100`);
+		} finally {
+			cleanup();
+		}
+	}
+});
+
+test("the default excludes drop a test file that lives under src/", () => {
+	// The end-to-end fixture used `test/a.test.ts`, which DEFAULT_INCLUDE rejects on
+	// its own — so DEFAULT_EXCLUDE was never actually exercised. A test file inside
+	// src/ passes the include and can only be dropped by the exclude.
+	assert.deepEqual(computeRanges(["--- a/src/a.test.ts", "+++ b/src/a.test.ts", "@@ -1,0 +1,9 @@"].join("\n")), []);
+	assert.deepEqual(computeRanges(["--- a/src/a.spec.ts", "+++ b/src/a.spec.ts", "@@ -1,0 +1,9 @@"].join("\n")), []);
+});
+
+test("duration is measured forward, not backward", () => {
+	const { dir, cleanup } = tmpRepo();
+	try {
+		writeReport(dir, { files: {}, testFiles: {} });
+		const r = runMutate({ cwd: dir, base: "HEAD", gitDiff: () => DIFF, runStryker: () => ({ ok: true, timedOut: false }) });
+		// `>= 0` alone proves nothing: adding the two timestamps instead of
+		// subtracting them also clears zero. An upper bound is what makes this an
+		// assertion about an interval rather than about a number being positive.
+		assert.ok(r.duration_ms !== undefined, "duration must be reported");
+		assert.ok(r.duration_ms! >= 0 && r.duration_ms! < 60_000, `elapsed ms out of range: ${r.duration_ms}`);
+	} finally {
+		cleanup();
+	}
+});
+
+test("a survivor covered by an unknown test id reports no test file rather than undefined", () => {
+	const parsed = parseStrykerReport({
+		files: { "src/a.ts": { mutants: [{ mutatorName: "M", replacement: "x", status: "Survived", coveredBy: ["99"], location: { start: { line: 5 } } }] } },
+		testFiles: { "test/a.test.ts": { tests: [{ id: "0" }] } },
+	});
+	assert.deepEqual(parsed.survivors[0].covered_by, []);
+});

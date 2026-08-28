@@ -99,3 +99,59 @@ test("countLines is inclusive of both ends", () => {
 	assert.equal(countLines([{ file: "a", start: 10, end: 10 }]), 1);
 	assert.equal(countLines([{ file: "a", start: 1, end: 5 }, { file: "b", start: 1, end: 3 }]), 8);
 });
+
+// --- gaps found by mutation testing, not by review ---
+
+test("a hunk header with multi-digit counts still parses", () => {
+	// `(?:,\d+)?` losing its `+` narrows the old-count to one digit and the whole
+	// header stops matching. Every earlier fixture used single-digit old counts,
+	// so nothing caught it.
+	const diff = ["--- a/src/a.ts", "+++ b/src/a.ts", "@@ -100,25 +200,30 @@", "+x"].join("\n");
+	assert.deepEqual(parseDiffRanges(diff), [{ file: "src/a.ts", start: 200, end: 229 }]);
+});
+
+test("a deleted file clears the current file rather than inheriting it", () => {
+	// Without matching `+++ /dev/null`, `file` stays pointed at the previous entry
+	// and the deleted file's hunks are attributed to it.
+	const diff = [
+		"--- a/src/kept.ts",
+		"+++ b/src/kept.ts",
+		"@@ -1,0 +5,2 @@",
+		"+x",
+		"--- a/src/gone.ts",
+		"+++ /dev/null",
+		"@@ -1,20 +0,0 @@",
+	].join("\n");
+	assert.deepEqual(parseDiffRanges(diff), [{ file: "src/kept.ts", start: 5, end: 6 }]);
+});
+
+test("include is an any-match, not an all-match", () => {
+	// With a single include pattern `some` and `every` behave identically, so a
+	// second pattern is what proves the intent.
+	const ranges = [{ file: "src/a.ts", start: 1, end: 2 }];
+	const kept = filterSourceRanges(ranges, { include: [/^lib\//, /^src\//], exclude: [] });
+	assert.deepEqual(kept, ranges, "matching any one include pattern is enough");
+});
+
+test("exclude is an any-match: one matching pattern is enough to drop a file", () => {
+	const ranges = [{ file: "src/a.test.ts", start: 1, end: 2 }];
+	const kept = filterSourceRanges(ranges, {
+		include: [/^src\//],
+		exclude: [/\.test\.ts$/, /^vendor\//],
+	});
+	assert.deepEqual(kept, [], "matching one exclude pattern drops it, not all of them");
+});
+
+test("ranges arriving out of order are sorted before merging", () => {
+	// Earlier fixtures were already ordered, so removing the comparator changed
+	// nothing and the mutant lived.
+	const merged = mergeRanges([
+		{ file: "src/a.ts", start: 40, end: 41 },
+		{ file: "src/a.ts", start: 10, end: 12 },
+		{ file: "src/a.ts", start: 13, end: 15 },
+	]);
+	assert.deepEqual(merged, [
+		{ file: "src/a.ts", start: 10, end: 15 },
+		{ file: "src/a.ts", start: 40, end: 41 },
+	]);
+});
