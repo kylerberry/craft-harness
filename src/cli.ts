@@ -1,12 +1,21 @@
 #!/usr/bin/env node
 import { basename } from "node:path";
-import { Store, defaultStorePath, diagnose, modelTotals, summarize, phaseTotals } from "./store.ts";
+import {
+	Store,
+	defaultStorePath,
+	diagnose,
+	modelTotals,
+	summarize,
+	phaseTotals,
+	phaseTotalsByVersion,
+	type PhaseTotal,
+} from "./store.ts";
 import { KINDS, PHASES, type Host, type Kind, type Mode, type Outcome, type PhaseName } from "./schema.ts";
 
 const USAGE = `craft-metrics — phase-grained CRAFT run collector
 
 Usage:
-  craft-metrics start  --kind feature|bugfix|refactor|scaffold|docs|chore [--run ID] --mode full|hitl|lite|dag [--host pi|claude-code] [--cwd PATH] [--repo NAME]
+  craft-metrics start  --kind feature|bugfix|refactor|scaffold|docs|chore [--run ID] --mode full|hitl|lite|dag [--host pi|claude-code] [--cwd PATH] [--repo NAME] [--craft-version V]
   craft-metrics enter  --run ID --phase C|counsel|R|A|F|T|S [--agent NAME]
   craft-metrics exit   --run ID --phase PHASE [--verdict V] [--blocking-findings N] [--p0 N] [--non-p0 N]
                        [--security-triggers a,b] [--counsel-status S] [--t-status S] [--docs-touched N]
@@ -108,6 +117,7 @@ function main(argv: string[]): void {
 				repo: arg("--repo", rest) ?? basename(arg("--cwd", rest) ?? process.cwd()),
 				mode: parseMode(rest),
 				kind: parseKind(rest),
+				craft_version: arg("--craft-version", rest),
 			});
 			process.stdout.write(run.run_id + "\n");
 			return;
@@ -222,18 +232,37 @@ function main(argv: string[]): void {
 			return;
 		}
 		case "totals": {
-			const totals = phaseTotals(store.loadAll());
-			process.stdout.write(
-				"phase          n     cost     notional      time      turns      in     out   cache\n",
-			);
-			for (const [name, t] of totals) {
-				process.stdout.write(
-					`${name.padEnd(14)} ${String(t.n).padStart(3)}  $${t.cost.toFixed(4).padStart(8)}  $${t.notional.toFixed(4).padStart(8)}  ${(t.ms / 1000).toFixed(1).padStart(8)}s  ${String(t.turns).padStart(5)}  ${mtok(t.tokens.input)}  ${mtok(t.tokens.output)}  ${mtok(t.tokens.cacheRead)}\n`,
-				);
+			const runs = store.loadAll();
+			const header = "phase          n     cost     notional      time      turns      in     out   cache\n";
+			const writeTable = (totals: Map<PhaseName, PhaseTotal>) => {
+				process.stdout.write(header);
+				for (const [name, t] of totals) {
+					process.stdout.write(
+						`${name.padEnd(14)} ${String(t.n).padStart(3)}  $${t.cost.toFixed(4).padStart(8)}  $${t.notional.toFixed(4).padStart(8)}  ${(t.ms / 1000).toFixed(1).padStart(8)}s  ${String(t.turns).padStart(5)}  ${mtok(t.tokens.input)}  ${mtok(t.tokens.output)}  ${mtok(t.tokens.cacheRead)}\n`,
+					);
+				}
+			};
+			// Split by default. A blended table averages workflows that differ in shape
+			// — v3's three-agent counsel panel against v4's single reviewer — and reads
+			// as one coherent number when it is not. `--all` opts back into the blend.
+			if (has("--all", rest)) {
+				writeTable(phaseTotals(runs));
+			} else {
+				const byVersion = phaseTotalsByVersion(runs);
+				for (const [version, totals] of byVersion) {
+					const n = runs.filter((r) => (r.craft_version ?? "unknown") === version).length;
+					const inferred = runs.filter(
+						(r) => (r.craft_version ?? "unknown") === version && r.craft_version_source === "inferred",
+					).length;
+					const mark = inferred > 0 ? ` (${inferred} inferred)` : "";
+					process.stdout.write(`\n── CRAFTS v${version} — ${n} run${n === 1 ? "" : "s"}${mark}\n`);
+					writeTable(totals);
+				}
 			}
 			process.stdout.write(
 				"\n`cost` is what you paid; `notional` is what the tokens are worth at list price\n" +
-					"(fills in $0 subscription phases). Compare phases by notional, not cost.\n",
+					"(fills in $0 subscription phases). Compare phases by notional, not cost.\n" +
+					"Split by workflow version — phases changed shape between versions. `--all` blends.\n",
 			);
 			return;
 		}

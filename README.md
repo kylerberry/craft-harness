@@ -69,10 +69,28 @@ Do not invent tokens or cost in the skill. The host adapter stamps those.
 
 ```bash
 craft-metrics show --last 5
-craft-metrics totals          # per phase: cost, time, turns, tokens
+craft-metrics totals          # per phase, split by workflow version
+craft-metrics totals --all    # ... blended across versions
 craft-metrics models          # per model: turns and tokens
 craft-metrics doctor          # exits 1 if the data is lying to you
 ```
+
+## Workflow versions
+
+The workflow being measured changes. Phases merge, agents collapse, gates appear — and a
+phase averaged across such a change describes a workflow that never existed, which is
+worse than missing data because it looks like signal.
+
+Pass `--craft-version N` at `start`. Runs recorded before that flag existed are classified
+from what they actually spawned: `craft-plan-*` or a spawned `craft-code-simplifier` /
+`craft-sharpener` marks v3; `craft-counsel`, a recorded verify, blinding scrubs, or an R
+decision record marks v4. Inference is always labelled — `~` in `show`, `(n inferred)` in
+`totals` — and conflicting or absent signals resolve to unknown rather than a guess.
+
+`totals` splits by version by default. This is not cosmetic: all 23 recorded `counsel`
+phases used the three-agent panel, so their ~12 min/invoke is a panel's wall time, and the
+single reviewer that replaced it has never been measured. A blended table would have hidden
+that permanently.
 
 ## Tokens, not just dollars
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Store, diagnose, modelTotals, summarize } from "../src/store.ts";
+import { Store, diagnose, modelTotals, summarize, phaseTotalsByVersion } from "../src/store.ts";
 import { computeSeams } from "../src/schema.ts";
 import type { PriceTable } from "../src/pricing.ts";
 
@@ -702,6 +702,119 @@ test("a metered model's notional equals its actual cost (no subscription gap)", 
 		const a = s.get(run.run_id)!.phases.find((p) => p.name === "A")!;
 		assert.equal(a.cost_usd, 2);
 		assert.equal(a.notional_cost_usd, 2);
+	} finally {
+		cleanup();
+	}
+});
+
+test("declared craft version wins over inference", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/v", repo: "demo", mode: "full", craft_version: "9" });
+		// Spawns a v3-only agent, but the declaration is authoritative.
+		s.enterPhase(run.run_id, "counsel", { agent: "craft-plan-feasibility" });
+		const got = s.get(run.run_id)!;
+		assert.equal(got.craft_version, "9");
+		assert.equal(got.craft_version_source, "declared");
+	} finally {
+		cleanup();
+	}
+});
+
+test("v3 is inferred from the three-agent counsel panel", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/v3", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "counsel", { agent: "craft-plan-feasibility,craft-plan-scope,craft-plan-security" });
+		const got = s.get(run.run_id)!;
+		assert.equal(got.craft_version, "3");
+		assert.equal(got.craft_version_source, "inferred");
+	} finally {
+		cleanup();
+	}
+});
+
+test("v3 is also inferred from a spawned simplifier or sharpener", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/v3b", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "S", { agent: "craft-sharpener" });
+		assert.equal(s.get(run.run_id)!.craft_version, "3");
+	} finally {
+		cleanup();
+	}
+});
+
+test("v4 is inferred from the merged counsel agent", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/v4", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "counsel", { agent: "craft-counsel" });
+		assert.equal(s.get(run.run_id)!.craft_version, "4");
+	} finally {
+		cleanup();
+	}
+});
+
+test("v4 is inferred from structural markers alone, with no telltale agent", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/v4b", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "R");
+		s.recordVerify(run.run_id, "npm test", 0); // verify gate is v4-only
+		s.exitPhase(run.run_id, "R", { decisions: 2, plan_deviations: 0 });
+		assert.equal(s.get(run.run_id)!.craft_version, "4");
+	} finally {
+		cleanup();
+	}
+});
+
+test("a run with no distinguishing marks stays unknown rather than guessing", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/vx", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "C");
+		s.exitPhase(run.run_id, "C");
+		const got = s.get(run.run_id)!;
+		assert.equal(got.craft_version, undefined);
+		assert.equal(got.craft_version_source, "unknown");
+	} finally {
+		cleanup();
+	}
+});
+
+test("conflicting version signals refuse to resolve", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/vc", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "counsel", { agent: "craft-plan-scope" }); // v3 signal
+		s.enterPhase(run.run_id, "S", { agent: "craft-counsel" }); // v4 signal
+		const got = s.get(run.run_id)!;
+		assert.equal(got.craft_version, undefined);
+		assert.equal(got.craft_version_source, "unknown");
+	} finally {
+		cleanup();
+	}
+});
+
+test("phaseTotalsByVersion keeps v3 and v4 counsel apart", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const old = s.openRun({ host: "pi", cwd: "/tmp/old", repo: "demo", mode: "full" });
+		s.enterPhase(old.run_id, "counsel", { agent: "craft-plan-feasibility", at: "2026-04-01T00:00:00.000Z" });
+		s.recordUsage(old.run_id, { cost_usd: 1, model: "zai/glm-5.2", turns: 1 });
+		s.exitPhase(old.run_id, "counsel", {}, "2026-04-01T00:12:00.000Z");
+
+		const fresh = s.openRun({ host: "pi", cwd: "/tmp/new", repo: "demo", mode: "full" });
+		s.enterPhase(fresh.run_id, "counsel", { agent: "craft-counsel", at: "2026-04-02T00:00:00.000Z" });
+		s.recordUsage(fresh.run_id, { cost_usd: 0.25, model: "zai/glm-5.2", turns: 1 });
+		s.exitPhase(fresh.run_id, "counsel", {}, "2026-04-02T00:03:00.000Z");
+
+		const byVersion = phaseTotalsByVersion(s.loadAll());
+		assert.equal(byVersion.get("3")!.get("counsel")!.cost, 1);
+		assert.equal(byVersion.get("3")!.get("counsel")!.ms, 720_000);
+		assert.equal(byVersion.get("4")!.get("counsel")!.cost, 0.25);
+		assert.equal(byVersion.get("4")!.get("counsel")!.ms, 180_000);
 	} finally {
 		cleanup();
 	}

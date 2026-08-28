@@ -145,6 +145,13 @@ export interface Run {
 	repo?: string;
 	mode: Mode;
 	kind?: Kind;
+	/**
+	 * Which CRAFTS revision produced this run. Declared at `start` where available;
+	 * otherwise inferred from the run's shape. Never compare phase costs across
+	 * versions without saying so — the workflow being measured is what changed.
+	 */
+	craft_version?: string;
+	craft_version_source?: "declared" | "inferred" | "unknown";
 	outcome: Outcome;
 	open_phase: PhaseName | null;
 	/** Number of phase_enter events seen. Zero means the run was started but never gated. */

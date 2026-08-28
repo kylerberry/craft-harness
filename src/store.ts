@@ -21,6 +21,7 @@ import {
 	SCHEMA_VERSION,
 } from "./schema.ts";
 import { applyNotionalPricing, loadPriceTable, type PriceTable } from "./pricing.ts";
+import { applyCraftVersion } from "./version.ts";
 
 /**
  * Grace window for attributing usage that arrives after its phase already closed.
@@ -98,6 +99,7 @@ type LogEvent =
 			repo?: string;
 			mode: Mode;
 			kind?: Kind;
+			craft_version?: string;
 	  }
 	| { v: 1; t: "phase_enter"; run_id: string; at: string; phase: PhaseName; agent?: string }
 	| { v: 1; t: "phase_exit"; run_id: string; at: string; phase: PhaseName; fields?: PhaseExitFields }
@@ -180,7 +182,12 @@ export class Store {
 		// Priced at read time, not folded from events: a price-table correction
 		// re-prices every historical run on the next `loadAll`, no migration needed.
 		const prices = this.prices ?? loadPriceTable();
-		for (const run of runs) applyNotionalPricing(run, prices);
+		for (const run of runs) {
+			applyNotionalPricing(run, prices);
+			// Runs recorded before `--craft-version` existed carry no declaration, so
+			// their workflow revision is recovered from the agents they spawned.
+			applyCraftVersion(run);
+		}
 		return runs;
 	}
 
@@ -227,6 +234,7 @@ export class Store {
 		repo?: string;
 		mode: Mode;
 		kind?: Kind;
+		craft_version?: string;
 		at?: string;
 	}): Run {
 		const existing = opts.run_id ? this.get(opts.run_id) : this.latestOpenForCwd(opts.cwd);
@@ -245,6 +253,7 @@ export class Store {
 			repo: opts.repo,
 			mode: opts.mode,
 			kind: opts.kind,
+			craft_version: opts.craft_version,
 		});
 		return this.require(run_id);
 	}
@@ -396,6 +405,7 @@ function fold(byId: Map<string, Run>, ev: LogEvent): void {
 			repo: ev.repo,
 			mode: ev.mode,
 			kind: ev.kind,
+			craft_version: ev.craft_version,
 			outcome: "open",
 			open_phase: null,
 			phase_entries: 0,
@@ -586,8 +596,12 @@ export function summarize(runs: Run[]): string {
 		const totalNotional = run.notional_cost_usd ?? totalCost;
 		const totalMs = run.phases.reduce((s, p) => s + p.duration_ms, 0);
 		const runNotional = totalNotional > totalCost ? `  (notional $${totalNotional.toFixed(4)})` : "";
+		// `~` marks an inferred version: recovered from the run's shape, not declared.
+		const ver = run.craft_version
+			? `  v${run.craft_version}${run.craft_version_source === "inferred" ? "~" : ""}`
+			: "  v?";
 		lines.push(
-			`${run.run_id.slice(0, 8)}  ${(run.kind ?? "?").padEnd(8)}  ${run.mode.padEnd(5)}  ${run.outcome.padEnd(12)}  $${totalCost.toFixed(4)}${runNotional}  ${(totalMs / 1000).toFixed(1)}s  ${run.host}  ${run.repo ?? run.cwd}`,
+			`${run.run_id.slice(0, 8)}${ver}  ${(run.kind ?? "?").padEnd(8)}  ${run.mode.padEnd(5)}  ${run.outcome.padEnd(12)}  $${totalCost.toFixed(4)}${runNotional}  ${(totalMs / 1000).toFixed(1)}s  ${run.host}  ${run.repo ?? run.cwd}`,
 		);
 		for (const p of run.phases) {
 			if (p.name === "unattributed" && p.cost_usd === 0 && p.duration_ms === 0 && p.tool_calls === 0) continue;
@@ -729,6 +743,26 @@ export interface PhaseTotal {
 	n: number;
 	turns: number;
 	tokens: Tokens;
+}
+
+/**
+ * Phase totals split by workflow revision. Averaging a phase across versions
+ * describes a workflow that never existed — the counsel phase, for instance, was a
+ * three-agent panel in v3 and one reviewer in v4, and a blended figure is neither.
+ */
+export function phaseTotalsByVersion(runs: Run[]): Map<string, Map<PhaseName, PhaseTotal>> {
+	const byVersion = new Map<string, Run[]>();
+	for (const run of runs) {
+		const key = run.craft_version ?? "unknown";
+		const list = byVersion.get(key) ?? [];
+		list.push(run);
+		byVersion.set(key, list);
+	}
+	const out = new Map<string, Map<PhaseName, PhaseTotal>>();
+	for (const [version, list] of [...byVersion.entries()].sort((a, b) => b[0].localeCompare(a[0]))) {
+		out.set(version, phaseTotals(list));
+	}
+	return out;
 }
 
 export function phaseTotals(runs: Run[]): Map<PhaseName, PhaseTotal> {
