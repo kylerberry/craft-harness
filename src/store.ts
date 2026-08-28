@@ -58,7 +58,7 @@ function addTokens(a: Tokens, b: Partial<Tokens>): void {
 	a.cacheWrite += b.cacheWrite ?? 0;
 }
 
-function pushUnique(list: string[], value?: string): void {
+export function pushUnique(list: string[], value?: string): void {
 	if (!value) return;
 	if (!list.includes(value)) list.push(value);
 }
@@ -643,7 +643,7 @@ export function summarize(runs: Run[]): string {
 	return lines.join("\n");
 }
 
-function fmtSeam(v: boolean | null): string {
+export function fmtSeam(v: boolean | null): string {
 	if (v === null) return "?";
 	return v ? "yes" : "NO";
 }
