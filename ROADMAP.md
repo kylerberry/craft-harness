@@ -340,37 +340,45 @@ First step is no longer analysis — it is **collecting any v4 counsel data at a
 
 ---
 
-## Wire craft-mutate into Render
+## Did mutation testing replace A's hunting, or add to it?
 
-**Status:** tool built, integration not started
+**Status:** built, unmeasured · blocked on v4 runs
 
-`craft-mutate` exists in `craft-tooling` and works: diff-scoped mutation testing, one JSON
-object out, survivors listed with the test files that ran and still passed. Measured 6.6s
-for a 412-line diff, ~2s for a 20-line one. What remains is the CRAFTS side.
+`craft-mutate` is wired into Render and A's weakened-test duty is now conditional:
+adjudicate the survivor list when there is one, read for it when there is not. The design
+is settled and the tool works — 6.6s for a 412-line diff, ~2s for a 20-line one, capped at
+twenty survivors with the remainder counted.
 
-Design settled in discussion:
+What is not settled is whether it does its actual job. That job was never "find mutants";
+it was "stop A from spending turns hunting". The verdict is **A's turn count**. If it still
+runs ~20.8 turns with a survivor list in hand, the feature added a step instead of
+replacing one, and the conditional in `craft-evaluator.md` is not landing.
 
-- **Runs in R**, after verify goes green — mutation on a red tree is meaningless. Not part
-  of the verify spine: verify is a pass/fail gate, this is a signal.
-- **Scoped to changed line ranges**, not whole files. Both cheaper and more readable —
-  whole-file scope surfaces pre-existing survivors Render did not cause.
-- **Does not gate.** Survivors become findings A adjudicates, same shape as plan
-  deviations. Some are equivalent mutants and correctly ignored; that call is a judgment,
-  which is exactly what A is for.
-- **Base ref captured at R start**, before any edits. A DAG conductor commits as it goes,
-  so `HEAD` at R exit would diff against its own work and see nothing.
-- **60s cap**, then skip. Missing Stryker config skips silently — most repos have none.
-- **TS/JS only** in practice. The output shape generalises across backends; the
-  scope-to-changed-lines input does not (`cargo-mutants` takes files, not ranges), so a
-  second backend would likely degrade to file scope.
+Two reasons the answer will be slow to arrive:
 
-Remaining work: capture the base ref in R, call the tool, put survivors in A's payload,
-record `--mutants-tested` / `--mutants-survived` on R exit, and retire A's manual hunt for
-weakened tests so this replaces turns instead of adding a step.
+- **Adoption is per-repo.** Mutation runs only where a `stryker.config.json` exists, which
+  today is `craft-tooling` and nothing else. Everywhere else Render gains one skipped call
+  and A takes the reading path. The skip branch is the norm, not the exception.
+- **The comparison baseline is v3.** The 20.8-turn figure comes from runs that predate
+  every change made since. A's duties narrowed at the same time mutation arrived, so a
+  drop cannot be attributed to mutation alone without holding the rest still.
 
-**The measurement that decides whether it worked:** A's turn count. If mutation lands and
-A still runs ~20.8 turns, the feature failed at its actual job, which was never "find
-mutants" but "stop A from hunting."
+Known limitation, not worth fixing yet: mutation runs once, in R. If F adds a test in
+response to a survivor, that fix is verified but not re-mutated.
+
+---
+
+## blind.ts coverage
+
+**Status:** known gap · smallest of the remaining ones
+
+54.4% mutation score, the lowest in `craft-tooling`, on the code that enforces reviewer
+blinding. Everything around it was brought up during the coverage pass and this was left.
+
+It matters more than the number suggests: the scrubber is the mechanical half of blinding,
+and the prose half is an instruction that may or may not land. If the scrubber is quietly
+wrong, nothing else reports it — the breach counter counts what the scrubber *caught*, not
+what it missed.
 
 ---
 
