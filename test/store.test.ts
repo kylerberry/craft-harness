@@ -848,3 +848,48 @@ test("a run where mutation was skipped records no mutation counts at all", () =>
 		cleanup();
 	}
 });
+
+test("a version declared after the run was already opened is backfilled", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		// The pi extension opens a run from the prompt before the skill reaches its
+		// own `start`, so the declared version always arrives second.
+		const opened = s.openRun({ host: "pi", cwd: "/tmp/late", repo: "late", mode: "full" });
+		assert.equal(opened.craft_version, undefined);
+		const filled = s.openRun({ host: "pi", cwd: "/tmp/late", repo: "late", mode: "full", kind: "feature", craft_version: "4" });
+		assert.equal(filled.run_id, opened.run_id, "the same run, not a second one");
+		assert.equal(filled.craft_version, "4");
+		assert.equal(filled.craft_version_source, "declared");
+		assert.equal(filled.kind, "feature");
+	} finally {
+		cleanup();
+	}
+});
+
+test("a declared version is not overwritten by a later, different declaration", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const first = s.openRun({ host: "pi", cwd: "/tmp/keep", repo: "keep", mode: "full", craft_version: "4" });
+		const second = s.openRun({ host: "pi", cwd: "/tmp/keep", repo: "keep", mode: "full", craft_version: "9" });
+		assert.equal(second.run_id, first.run_id);
+		assert.equal(second.craft_version, "4", "first declaration wins; a later one is not authoritative");
+	} finally {
+		cleanup();
+	}
+});
+
+test("a declared version beats what inference would have concluded", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/beat", repo: "beat", mode: "full" });
+		// A v3-only agent would otherwise date this run to v3.
+		s.enterPhase(run.run_id, "counsel", { agent: "craft-plan-scope" });
+		assert.equal(s.get(run.run_id)!.craft_version, "3");
+		s.openRun({ host: "pi", cwd: "/tmp/beat", repo: "beat", mode: "full", craft_version: "4" });
+		const after = s.get(run.run_id)!;
+		assert.equal(after.craft_version, "4");
+		assert.equal(after.craft_version_source, "declared");
+	} finally {
+		cleanup();
+	}
+});

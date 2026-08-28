@@ -109,6 +109,7 @@ type LogEvent =
 	| { v: 1; t: "verify"; run_id: string; at: string; command: string; exit_code: number; phase: PhaseName | null }
 	| { v: 1; t: "mode"; run_id: string; at: string; mode: Mode }
 	| { v: 1; t: "kind"; run_id: string; at: string; kind: Kind }
+	| { v: 1; t: "craft_version"; run_id: string; at: string; craft_version: string }
 	| { v: 1; t: "run_end"; run_id: string; at: string; outcome: Outcome };
 
 export class Store {
@@ -240,6 +241,16 @@ export class Store {
 		const existing = opts.run_id ? this.get(opts.run_id) : this.latestOpenForCwd(opts.cwd);
 		if (existing) {
 			if (opts.kind && !existing.kind) this.setKind(existing.run_id, opts.kind, opts.at);
+			// The pi extension opens a run from the prompt before the skill reaches its
+			// own `start`, so the declared version arrives second and must be backfilled
+			// or every run silently falls back to inference.
+			//
+			// The test is whether a version was *declared*, not whether one is present:
+			// `existing` has already been through the classifier, so an inferred value
+			// would otherwise look like a declaration and block the real one.
+			if (opts.craft_version && existing.craft_version_source !== "declared") {
+				this.setCraftVersion(existing.run_id, opts.craft_version, opts.at);
+			}
 			return this.get(existing.run_id) ?? existing;
 		}
 		const run_id = opts.run_id ?? randomUUID();
@@ -372,6 +383,17 @@ export class Store {
 		return this.get(runId) ?? this.missing(runId);
 	}
 
+	setCraftVersion(runId: string, craft_version: string, at?: string): Run {
+		this.append({
+			v: SCHEMA_VERSION,
+			t: "craft_version",
+			run_id: runId,
+			at: at ?? nowIso(),
+			craft_version,
+		});
+		return this.get(runId) ?? this.missing(runId);
+	}
+
 	latestOpenForCwd(cwd: string): Run | undefined {
 		const id = this.readSidecar()[cwd];
 		if (id) {
@@ -475,6 +497,9 @@ function fold(byId: Map<string, Run>, ev: LogEvent): void {
 			return;
 		case "kind":
 			run.kind = ev.kind;
+			return;
+		case "craft_version":
+			run.craft_version = ev.craft_version;
 			return;
 		case "run_end":
 			if (run.open_phase) closePhase(run, run.open_phase, ev.at);
