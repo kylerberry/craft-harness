@@ -286,21 +286,6 @@ first. Decide the node-count threshold from that ratio, not from taste.
 
 ---
 
-## Mode re-fold
-
-**Status:** known bug · **Size:** small
-
-`fold` resolves each usage event against `run.mode` as it stands at that moment in the log.
-A `mode` event appended later therefore relabels the run without moving any cost that was
-already folded. `craft-metrics mode` does not do what it appears to do.
-
-Fix: pre-scan each run for its final mode before resolving usage. Two payoffs beyond
-correctness — mid-run mode corrections start working, and the historical `/execute-dag`
-supervisor session currently sitting in `unattributed` (~$36, the single largest orphaned
-bucket) reclassifies to `supervisor` retroactively.
-
----
-
 ## Does blinding need the safety net?
 
 **Status:** open question, blocked on v4 runs
