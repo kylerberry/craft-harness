@@ -3,6 +3,47 @@
 Explored but not built. Each entry records the reasoning and the open questions so the
 decision can be resumed without re-deriving it.
 
+> **Every measurement on this page is CRAFTS v3 data.** v4 — single merged counsel,
+> inline simplify and Sharpen, blinded reviewers, the verify gate, the R decision
+> record — has produced **zero** recorded runs. `craft-metrics totals` confirms: 26
+> v3 runs carry all the cost, v4 none. Directions are probably robust (A's turn count
+> dwarfs every other phase by a wide margin), magnitudes will move. Re-measure before
+> acting on any specific figure here.
+
+---
+
+## Workflow versioning
+
+**Status:** built
+
+The workflow changes underneath the metrics. Phases merge, agents collapse, gates
+appear — and a phase measured across such a change describes two workflows averaged
+into one that never existed. That is worse than missing data, because it looks like
+signal.
+
+This already happened. Every recorded `counsel` phase used the three-agent plan-review
+panel; the single reviewer that replaced it has never run. The "twelve minutes per
+counsel" figure quoted throughout earlier drafts of this file is a panel's wall time,
+and a naive average across the change would have buried that permanently.
+
+**Declared going forward.** `craft-version` lives in `craft/SKILL.md` frontmatter and is
+passed at `craft-metrics start --craft-version N`. Bump when a phase's *shape* changes:
+agents added or removed, duties moved between phases, gates introduced. Not for wording.
+Current version is **4**; everything before the counsel collapse is **3**.
+
+**Inferred backward.** Runs predating the flag are classified from what they actually
+spawned — `craft-plan-*` and spawned `craft-code-simplifier`/`craft-sharpener` mark v3;
+`craft-counsel`, a recorded verify, blinding scrubs, or an R decision record mark v4.
+Inference is labelled as such (`~` in `show`, "(n inferred)" in `totals`), never
+presented as a declaration. Conflicting signals resolve to unknown rather than guessing,
+and a run with no distinguishing marks stays unknown.
+
+`craft-metrics totals` splits by version by default; `--all` opts back into a blended
+table for when that is genuinely what you want.
+
+Deliberately skipped: recording a git SHA alongside the version. It disambiguates
+mid-version drift but does not group, and grouping is the entire point.
+
 ---
 
 ## Tier by task value
@@ -305,16 +346,22 @@ since only one of those justifies keeping the prose rules.
 
 ## Counsel's twelve minutes
 
-**Status:** open question
+**Status:** open question — but the measurement is stale, see below
 
-Counsel is the slowest phase in the workflow at ~12 min/invoke. It was collapsed from
-three parallel reviewers to one for cost, not latency — so the twelve minutes is one
-reviewer's time, not a panel's. By notional cost it is a modest 6% of total spend, so the
-case for isolating this is now about latency, not the "biggest saver" framing an earlier
-version of this file used.
+**Correction.** An earlier version of this entry claimed the twelve minutes was "one
+reviewer's time, not a panel's." That was wrong. Checking agent names on every recorded
+`counsel` phase: all 23 used the three-agent `craft-plan-*` panel. Zero runs of the
+single merged `craft-counsel` exist. The twelve minutes is a **panel's** wall time —
+three reviewers in parallel, so roughly the slowest of three, not one reviewer's latency.
 
-Unknown which of three causes dominates: prompt length, model tier, or the volume of plan
-it must read. Worth isolating before either accepting the cost or cutting the phase.
+Single-reviewer counsel is entirely unmeasured. It may be faster (one agent, no
+fan-out/fan-in), or slower (one agent doing three lenses' work serially instead of three
+in parallel). Both are plausible and the data cannot distinguish them.
+
+By notional cost counsel is a modest 6% of v3 spend, so the case for looking at this is
+latency, not the "biggest saver" framing an even earlier version of this file used.
+
+First step is no longer analysis — it is **collecting any v4 counsel data at all.**
 
 ---
 

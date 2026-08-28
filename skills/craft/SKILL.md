@@ -1,6 +1,7 @@
 ---
 name: craft
 command: craft
+craft-version: "4"
 argument-hint: "Optional: hitl"
 icon: Hammer
 description: >-
@@ -40,8 +41,10 @@ At the start of the run, once. Infer `--kind` from the **user request**, not fro
 Do not invent extra kinds. Security is `security_triggers` on C, not a kind. HITL is `--mode hitl`, not a kind. Lite is `--mode lite`, not a kind.
 
 ```bash
-RUN=$(craft-metrics start --kind feature|bugfix|refactor|scaffold|docs|chore --mode full|hitl|lite --host pi|claude-code --cwd "$PWD")
+RUN=$(craft-metrics start --kind feature|bugfix|refactor|scaffold|docs|chore --mode full|hitl|lite --host pi|claude-code --cwd "$PWD" --craft-version 4)
 ```
+
+`--craft-version` is the `craft-version` field in this file's frontmatter — pass it verbatim, do not infer it. The workflow itself changes: phases merge, agents collapse, gates appear. Without the version, metrics from two different workflows average into a figure describing neither. This is not hypothetical — every `counsel` measurement on record came from the three-agent panel that v4 replaced with a single reviewer, and a blended average would have hidden that entirely.
 
 Keep `$RUN` for the rest of the session. If `start` is missed, `craft-metrics current --cwd "$PWD"` may recover an id the host already opened. Wrong guess: `craft-metrics kind --run "$RUN" --kind feature` once, after C, not later.
 

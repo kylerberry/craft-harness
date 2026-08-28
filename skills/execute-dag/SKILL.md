@@ -40,8 +40,10 @@ Parse from the invocation (skill args or the user message). Unknown flags are an
 Open a supervisor run before dispatching:
 
 ```bash
-RUN=$(craft-metrics start --kind scaffold --mode dag --host pi|claude-code --cwd "<meta.repo>")
+RUN=$(craft-metrics start --kind scaffold --mode dag --host pi|claude-code --cwd "<meta.repo>" --craft-version 4)
 ```
+
+`--craft-version` is the `craft-version` frontmatter field in `craft/SKILL.md`; pass it verbatim.
 
 `--mode dag` is not a CRAFTS protocol — it marks this session as the supervisor. You never enter a CRAFTS phase; each node-conductor opens its own run in its own worktree. Your orchestration cost (dispatch, waiting, merges, verification) is bucketed as `supervisor`, which is what makes DAG overhead comparable against the node work it coordinates. Record post-merge verification against this run, and `craft-metrics end --run "$RUN"` when the DAG is terminal.
 
