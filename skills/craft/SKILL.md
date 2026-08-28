@@ -5,13 +5,18 @@ craft-version: "4"
 argument-hint: "Optional: hitl"
 icon: Hammer
 description: >-
-  Phase-gate execution workflow. Always C→R→A→F→T→S. Use /craft-hitl when
-  Render contains a human-owned decision seam. Use /craft-lite to skip T.
+  Phase-gate execution workflow. Always C→counsel→R→A→[F]→T→S; F runs only on a
+  blocking finding. Use /craft-hitl when Render contains a human-owned decision
+  seam. Use /craft-lite to skip plan counsel and T.
 ---
 
 # CRAFTS Workflow
 
-Every run is `C → counsel → R → A → F → T → S`. There is no short path. Use `/craft-hitl` when Render must pause at a `TODO(human)` seam. Use `/craft-lite` when Tighten is out of scope.
+Every run is `C → counsel → R → A → [F] → T → S`. There is no short path: no gate is skipped to save time, and none is reordered.
+
+`F` is bracketed because it is the one phase that runs on condition rather than on schedule — it exists to resolve blocking findings, so with none to resolve there is nothing for it to do. Skipping it for that reason is the protocol working; skipping any other gate is not.
+
+Use `/craft-hitl` when Render must pause at a `TODO(human)` seam. Use `/craft-lite` when Tighten is out of scope.
 
 ## Core contract
 
@@ -64,7 +69,8 @@ craft-metrics exit --run "$RUN" --phase counsel --counsel-status pass|blocked|ne
 craft-metrics exit --run "$RUN" --phase A --verdict pass|fail --blocking-findings N
 craft-metrics exit --run "$RUN" --phase T --t-status pass|fail --p0 N --non-p0 N
 craft-metrics exit --run "$RUN" --phase S --docs-touched N
-# R and F: exit with no extra fields
+# R and F: exit with no extra fields. F only appears when it ran — a clean A
+# means no F gate at all, not an F gate with nothing recorded.
 ```
 
 Whenever the verification command runs — in R, after a fix in F, and after each DAG merge — record its real exit code:
@@ -213,9 +219,13 @@ A cannot report `verdict: pass` while the recorded verify is red — `craft-metr
 
 ### F — Fix
 
-Use `craft-builder`. Pass only blocking findings and the context required to change them safely.
+**Conditional.** Enter F only when A returned `verdict: fail`, or T returned a P0 finding. A passing A with no blocking findings means there is nothing to fix: skip to the next phase and do not emit an F gate at all.
 
-Fix only blockers, apply the smallest safe change, rerun affected verification, and document justified disagreements. Repeat A only when the fix materially changes the assessed behavior.
+This is not a formality. Every F phase on record — sixteen of sixteen — ran with no blocking finding from either reviewer, because the phase was entered as part of the sequence rather than in response to something. That is 5% of all spend performing work nobody asked for, and worse, it invites edits that no reviewer has seen. `craft-metrics doctor` reports this as `fix-without-findings`.
+
+When it does run: use `craft-builder`, and pass only blocking findings and the context required to change them safely.
+
+Fix only blockers, apply the smallest safe change, rerun affected verification, and document justified disagreements. Repeat A only when the fix materially changes the assessed behavior — and expect that repeat to show up as a second cycle on A, which is the intended record of an argument, not a defect.
 
 ### T — Tighten
 

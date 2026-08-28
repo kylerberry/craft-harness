@@ -16,7 +16,7 @@ flowchart LR
     R --> A["A — Assess"]
     A -- "blockers" --> FA["F — Fix"]
     FA --> A
-    A -- "/craft pass" --> T["T — Tighten"]
+    A -- "/craft pass: F skipped" --> T["T — Tighten"]
     T -- "P0" --> FT["F — Fix P0"]
     FT --> T
     T -- "pass; non-P0 forwarded" --> S["S — Sharpen (conductor, inline)"]
@@ -48,7 +48,7 @@ agents/
 
 CRAFTS is a sequential delivery workflow:
 
-`C → R → A → F → T → S`
+`C → counsel → R → A → [F] → T → S`
 
 | Phase | Role | Purpose |
 | --- | --- | --- |
@@ -56,15 +56,15 @@ CRAFTS is a sequential delivery workflow:
 | *Plan counsel* | `craft-counsel` (single reviewer, different model family from C) | Independent one-pass review of the C plan before Render: feasibility, coherence, scope, and security when triggered |
 | **R**ender | `craft-builder` | Test-first implementation, a required inline simplify pass (conductor, no spawn), and a decision record of choices the plan did not dictate |
 | **A**ssess | `craft-evaluator` (different model family from R, blinded) | Judges what an exit code cannot: do tests encode the criteria, were they weakened to pass, is the implementation sound |
-| **F**ix | `craft-builder` | Minimal fixes for blocking findings |
+| **F**ix | `craft-builder` | Minimal fixes for blocking findings. **Conditional** — skipped entirely when A passes clean |
 | **T**ighten | `craft-security-review` (different model family from R) | Bundled final-diff security review; only P0 findings block |
 | **S**harpen | conductor (inline, no spawn) | Durable documentation and process learning |
 
 | Command | Path | When |
 | --- | --- | --- |
-| `/craft` | `C → counsel → R → A → F → T → S` | Default. No short path. |
+| `/craft` | `C → counsel → R → A → [F] → T → S` | Default. No gate skipped or reordered. |
 | `/craft-hitl` | Same as `/craft`, HITL Render | A `TODO(human)` seam is reserved. |
-| `/craft-lite` | `C → R → A → F → S` | Plan counsel and Tighten are out of scope (prototype, spike). |
+| `/craft-lite` | `C → R → A → [F] → S` | Plan counsel and Tighten are out of scope (prototype, spike). |
 
 Every protocol runs a required Render-exit simplify pass after tests go green (tests must stay green; unrecoverable simplify is reverted) — the conductor performs it directly, not as a separate agent spawn. `/craft-lite` skips plan counsel and Tighten and uses `--mode lite`, which the metrics store enforces by rejecting `counsel`/`T` phase entries under that mode.
 
