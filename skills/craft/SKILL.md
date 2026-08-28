@@ -113,6 +113,14 @@ If the report is `blocked` or `needs-replan`, or has blocking findings, C revise
 
 Use `craft-builder` for test-first implementation guidance. Pass only the final C plan, adopted plan changes, rejected blockers whose rationale constrains implementation, and relevant plan-security findings, dispositions, and residual risks for triggered work. The conductor applies the changes.
 
+Before touching anything, record the ref Render starts from:
+
+```bash
+R_BASE=$(git rev-parse HEAD)
+```
+
+Step 6 diffs against it. Capture it first — a DAG conductor commits as it goes, so reading `HEAD` at the end of Render diffs its own work against itself and finds nothing changed.
+
 1. **Red:** write the planned failing test. Return to C if it cannot be expressed.
 2. **Green:** implement the minimum passing change.
 3. **Refactor:** local cleanup while tests remain green. This is not the simplify gate.
@@ -124,7 +132,29 @@ Use `craft-builder` for test-first implementation guidance. Pass only the final 
 
    Record what actually ran, not what should have. A red result recorded honestly is a working gate; a green result asserted in prose is not evidence. If the repository declares no verification command, C must name one in the plan; a task with no way to be verified returns to C.
 5. **Simplify (R-exit, required):** after tests are green, review the Render diff yourself — changed lines; new files in full — for reuse, dead code, naming, and unnecessary nesting or abstraction. No separate agent spawn: this is the conductor's own pass over its own diff, behavior-preserving only (same invariants as `craft-code-simplifier`, which exists as a standalone tool but is not part of this flow). Re-run focused tests. Stay in R until green. If a simplify edit breaks tests, revert or fix it until green. If unrecoverable, revert simplify entirely, keep the last green Render, and enter A with that noted. Do not enter A red. Simplify is part of R; do not invent a metrics phase for it.
-6. **Record the decisions.** A reads a diff, which shows *what* changed and never *why*. An edge case left alone because the plan scoped it out and one left alone because it was awkward look identical. Before exiting R, write the implementation choices the plan did not dictate:
+6. **Mutation-test the diff.** Verification proves the suite passes. It cannot prove the suite would *notice* if the code were wrong — a loosened matcher or a fixture edited to match wrong output keeps every test green. Run it after simplify, since simplify edits the code:
+
+   ```bash
+   craft-mutate --base "$R_BASE" --timeout 60
+   ```
+
+   One JSON object comes back. `status: "ran"` carries `tested`, `killed`, `survived`, `no_coverage`, and up to twenty `survivors` — lines a test executed and did not object to — plus `survivors_omitted` when there were more.
+
+   **This does not gate.** A survivor is sometimes an equivalent mutant: semantically identical, unkillable, correctly ignored. Deciding which is a judgment, so survivors go to A as findings to adjudicate rather than blocking Render.
+
+   `status: "skipped"` is normal and not a failure. Most repositories have no `stryker.config.json`, and TypeScript/JavaScript is the only stack supported. `no-backend`, `oversize`, `timeout`, and an outright error all mean the same thing here: carry on, and tell A which it was so it knows to read for weakened tests itself.
+
+   Pass the survivor block to A wrapped in verbatim markers:
+
+   ```
+   <!--craft:verbatim-->
+   src/parser.ts:59  StringLiteral  → ""   covered_by: test/parser.test.ts
+   <!--/craft:verbatim-->
+   ```
+
+   Mutant replacements are quoted source, not prose. Without the markers the blinding scrubber rewrites any agent name appearing inside a mutated string literal and the finding stops making sense.
+
+7. **Record the decisions.** A reads a diff, which shows *what* changed and never *why*. An edge case left alone because the plan scoped it out and one left alone because it was awkward look identical. Before exiting R, write the implementation choices the plan did not dictate:
 
    ```
    decision:      what was chosen
@@ -139,7 +169,8 @@ Use `craft-builder` for test-first implementation guidance. Pass only the final 
    Write these in neutral voice — "chose X over Y because Z", never "I decided". They go to a blinded reviewer, and first-person phrasing is an authorship signal the scrubber cannot remove.
 
    ```bash
-   craft-metrics exit --run "$RUN" --phase R --decisions N --plan-deviations N
+   craft-metrics exit --run "$RUN" --phase R --decisions N --plan-deviations N \
+     --mutants-tested N --mutants-survived N
    ```
 
 #### HITL Render override
@@ -171,7 +202,7 @@ Keep findings and dispositions in full — A must still judge whether a rejected
 A reviews the post-simplify tree. **The verify command already settled whether the tree is green — A does not re-adjudicate that.** A judges only what an exit code cannot:
 
 - do the tests actually encode every canonical criterion;
-- were tests weakened to pass — assertions deleted or loosened, cases skipped, fixtures rewritten to match wrong output;
+- were tests weakened to pass. When Render supplied mutation survivors, adjudicate that list instead of searching: each entry is a line a test ran and did not object to. When mutation was skipped — no backend, oversize, timeout — read for it as before: assertions deleted or loosened, cases skipped, fixtures rewritten to match wrong output. Do both and the phase costs more than it saves;
 - is the implementation sound at behavior, edge cases, boundary error handling, and type safety;
 - were rejected or adopted counsel blockers handled substantively;
 - **is each plan deviation justified.** Judge the stated rationale, not the fact of deviating — plans are wrong sometimes and a good reason to depart is not a defect. A deviation with a thin, absent, or post-hoc rationale is a blocking finding; so is a change visible in the diff that departs from the plan and appears in no decision record at all.
