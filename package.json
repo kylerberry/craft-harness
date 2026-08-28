@@ -11,11 +11,20 @@
 		"test": "node --test --experimental-strip-types test/*.test.ts",
 		"cli": "node --experimental-strip-types src/cli.ts"
 	},
-	"keywords": ["pi-package", "craft"],
+	"keywords": [
+		"pi-package",
+		"craft"
+	],
 	"pi": {
-		"extensions": ["./extensions/pi.ts"]
+		"extensions": [
+			"./extensions/pi.ts"
+		]
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"@stryker-mutator/core": "^10.0.0",
+		"@stryker-mutator/tap-runner": "^10.0.0"
 	}
 }
