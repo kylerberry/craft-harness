@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BLIND_TARGETS, scrub, scrubPayload } from "../src/blind.ts";
+import { BLIND_TARGETS, EXEMPT_OPEN, scrub, scrubPayload, splitExempt, verbatim } from "../src/blind.ts";
 
 test("strips phase agent names but keeps the sentence readable", () => {
 	const { text, hits } = scrub("craft-builder implemented the retry loop per craft-planner's plan.");
@@ -59,4 +59,61 @@ test("both adversarial reviewers are blind targets; builders are not", () => {
 	assert.ok(BLIND_TARGETS.has("craft-security-review"));
 	assert.ok(!BLIND_TARGETS.has("craft-builder"));
 	assert.ok(!BLIND_TARGETS.has("craft-counsel"));
+});
+
+// --- verbatim exemption: quoted code must survive scrubbing intact ---
+
+test("splitExempt separates prose from marked regions", () => {
+	const text = `before ${verbatim("kept")} after`;
+	const parts = splitExempt(text);
+	assert.deepEqual(parts.map((p) => p.exempt), [false, true, false]);
+	assert.equal(parts[0].text, "before ");
+	assert.ok(parts[1].text.includes("kept"));
+	assert.equal(parts[2].text, " after");
+});
+
+test("text with no markers is one scrubbable segment", () => {
+	const parts = splitExempt("plain text");
+	assert.deepEqual(parts, [{ text: "plain text", exempt: false }]);
+});
+
+test("an unclosed marker leaves the remainder verbatim rather than scrubbing it", () => {
+	// Failing to scrub is visible in the breach count; wrongly scrubbing a
+	// survivor destroys evidence silently, so the safe default is to skip.
+	const parts = splitExempt(`prose ${EXEMPT_OPEN} craft-builder wrote this`);
+	assert.equal(parts.length, 2);
+	assert.equal(parts[0].exempt, false);
+	assert.equal(parts[1].exempt, true);
+});
+
+test("a mutant replacement naming an agent survives scrubbing intact", () => {
+	// The concrete collision: blind.ts itself contains the literal
+	// "craft-evaluator", so a StringLiteral mutant of that line quotes it.
+	const survivors = verbatim(
+		'src/blind.ts:16  StringLiteral  → "craft-evaluator"  covered_by: test/blind.test.ts',
+	);
+	const input: Record<string, unknown> = {
+		agent: "craft-evaluator",
+		task: `Assess the change set. craft-builder made it on zai/glm-5.2.\n\nSurvivors:\n${survivors}`,
+	};
+	const hits = scrubPayload(input, "craft-evaluator");
+	const task = String(input.task);
+	// Prose is still scrubbed.
+	assert.ok(!task.includes("craft-builder"));
+	assert.ok(!task.includes("glm-5.2"));
+	assert.ok(hits.length >= 2);
+	// The quoted mutant is untouched.
+	assert.ok(task.includes('→ "craft-evaluator"'), "the survivor's replacement must read exactly as reported");
+	assert.ok(task.includes("src/blind.ts:16"));
+});
+
+test("an exempt region does not suppress scrubbing of later prose", () => {
+	const input: Record<string, unknown> = {
+		task: `${verbatim("craft-planner")}\nthen craft-builder on xai/grok-4.6 did the work`,
+	};
+	scrubPayload(input, "craft-evaluator");
+	const task = String(input.task);
+	assert.ok(task.includes("craft-planner"), "inside the markers, kept");
+	assert.ok(!task.includes("craft-builder"), "outside them, scrubbed");
+	assert.ok(!task.includes("grok-4.6"));
 });

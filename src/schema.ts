@@ -110,6 +110,13 @@ export interface PhaseRecord {
 	 */
 	decisions?: number;
 	plan_deviations?: number;
+	/**
+	 * Mutation testing over Render's diff. `mutants_survived` is the count a
+	 * reviewer must adjudicate; watching it against A's turn count is how we
+	 * learn whether this replaced a reading pass or merely added a step.
+	 */
+	mutants_tested?: number;
+	mutants_survived?: number;
 }
 
 export interface Seams {
@@ -190,6 +197,13 @@ export interface PhaseExitFields {
 	 */
 	decisions?: number;
 	plan_deviations?: number;
+	/**
+	 * Mutation testing over Render's diff. `mutants_survived` is the count a
+	 * reviewer must adjudicate; watching it against A's turn count is how we
+	 * learn whether this replaced a reading pass or merely added a step.
+	 */
+	mutants_tested?: number;
+	mutants_survived?: number;
 }
 
 export function emptyTokens(): Tokens {

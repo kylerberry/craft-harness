@@ -264,3 +264,53 @@ test("a survivor covered by an unknown test id reports no test file rather than 
 	});
 	assert.deepEqual(parsed.survivors[0].covered_by, []);
 });
+
+// --- survivor cap: a reviewer gets a list it can actually rule on ---
+
+function reportWith(n: number) {
+	return {
+		files: {
+			"src/a.ts": {
+				mutants: Array.from({ length: n }, (_, i) => ({
+					mutatorName: "StringLiteral",
+					replacement: `"m${i}"`,
+					status: "Survived",
+					coveredBy: ["0"],
+					location: { start: { line: n - i } }, // reverse order, to prove sorting
+				})),
+			},
+		},
+		testFiles: { "test/a.test.ts": { tests: [{ id: "0" }] } },
+	};
+}
+
+test("survivors are capped, and the remainder is counted rather than dropped silently", () => {
+	const parsed = parseStrykerReport(reportWith(57), 20);
+	assert.equal(parsed.survived, 57, "the true count is still reported");
+	assert.equal(parsed.survivors.length, 20);
+	assert.equal(parsed.survivors_omitted, 37);
+});
+
+test("a list under the cap reports nothing omitted", () => {
+	const parsed = parseStrykerReport(reportWith(5), 20);
+	assert.equal(parsed.survivors.length, 5);
+	assert.equal(parsed.survivors_omitted, 0);
+});
+
+test("survivors are sorted by file and line before capping, so the kept set is stable", () => {
+	const parsed = parseStrykerReport(reportWith(30), 3);
+	assert.deepEqual(parsed.survivors.map((s) => s.line), [1, 2, 3]);
+});
+
+test("the cap flows through runMutate into the reported result", () => {
+	const { dir, cleanup } = tmpRepo();
+	try {
+		writeReport(dir, reportWith(25));
+		const r = runMutate({ cwd: dir, base: "HEAD", gitDiff: () => DIFF, runStryker: () => ({ ok: true, timedOut: false }) });
+		assert.equal(r.survived, 25);
+		assert.equal(r.survivors!.length, 20);
+		assert.equal(r.survivors_omitted, 5);
+	} finally {
+		cleanup();
+	}
+});

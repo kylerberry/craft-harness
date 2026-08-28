@@ -63,6 +63,7 @@ Usage:
                        [--security-triggers a,b] [--counsel-status S] [--t-status S] [--docs-touched N]
                        [--blocking-questions N] [--afk-hitl-status S] [--criteria-provenance S] [--probe-required]
                        [--decisions N] [--plan-deviations N]
+                       [--mutants-tested N] [--mutants-survived N]
   craft-metrics usage  --run ID [--phase P] [--model M] [--provider P] [--cost N] [--input N] [--output N]
                        [--cache-read N] [--cache-write N] [--turns N] [--tool NAME] [--agent NAME]
                        [--subagent] [--quota-error] [--timeout] [--failover] [--blinding-scrubs N]
@@ -178,6 +179,8 @@ export function main(argv: string[], io: Io = defaultIo): number {
 				docs_touched: num("--docs-touched", rest),
 				decisions: num("--decisions", rest),
 				plan_deviations: num("--plan-deviations", rest),
+				mutants_tested: num("--mutants-tested", rest),
+				mutants_survived: num("--mutants-survived", rest),
 			});
 			io.write(run.run_id + "\n");
 			return 0;

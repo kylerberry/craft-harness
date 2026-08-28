@@ -43,11 +43,27 @@ export interface MutateResult {
 	killed?: number;
 	survived?: number;
 	no_coverage?: number;
+	/** Capped at `SURVIVOR_LIMIT`; `survivors_omitted` says how many were dropped. */
 	survivors?: Survivor[];
+	/**
+	 * Survivors beyond the cap. Always reported, never silent: a truncated list
+	 * that looks complete would tell a reviewer the diff is cleaner than it is.
+	 */
+	survivors_omitted?: number;
 	lines_scoped?: number;
 	duration_ms?: number;
 	detail?: string;
 }
+
+/**
+ * How many survivors to hand a reviewer.
+ *
+ * The point of this signal is to replace a reading pass, not to relocate it. A
+ * real diff can produce dozens of survivors — 57 on a 302-line change in this
+ * repo — and adjudicating that many costs more than the hunting it displaces.
+ * Twenty is a list a reviewer can actually rule on; the rest are counted.
+ */
+export const SURVIVOR_LIMIT = 20;
 
 /** Stryker's JSON report, narrowed to the fields consumed here. */
 interface StrykerReport {
@@ -74,12 +90,16 @@ function testFileById(report: StrykerReport): Map<string, string> {
 	return map;
 }
 
-export function parseStrykerReport(report: StrykerReport): {
+export function parseStrykerReport(
+	report: StrykerReport,
+	limit = SURVIVOR_LIMIT,
+): {
 	tested: number;
 	killed: number;
 	survived: number;
 	no_coverage: number;
 	survivors: Survivor[];
+	survivors_omitted: number;
 } {
 	const byId = testFileById(report);
 	let killed = 0;
@@ -107,7 +127,17 @@ export function parseStrykerReport(report: StrykerReport): {
 			// nothing about test quality, only about the mutant being unrunnable.
 		}
 	}
-	return { tested: killed + survived + noCoverage, killed, survived, no_coverage: noCoverage, survivors };
+	// Sorted before capping so the kept twenty are stable and grouped by file,
+	// rather than whichever order the report happened to serialise.
+	survivors.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+	return {
+		tested: killed + survived + noCoverage,
+		killed,
+		survived,
+		no_coverage: noCoverage,
+		survivors: survivors.slice(0, limit),
+		survivors_omitted: Math.max(0, survivors.length - limit),
+	};
 }
 
 export interface RunOptions {

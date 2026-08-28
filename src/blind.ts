@@ -100,19 +100,77 @@ export function scrub(text: string, self?: string): ScrubResult {
 }
 
 /**
+ * Regions the scrubber must leave alone, marked inline in the payload.
+ *
+ * Mutation survivors carry fragments of source as `replacement` values. In a
+ * repository that mentions the agents by name — this one does — a mutated string
+ * literal can legitimately contain `craft-evaluator`, and rewriting it to a role
+ * noun corrupts the finding into something the reviewer cannot act on.
+ *
+ * The exemption is for code quoted as evidence, never for prose. Anything a
+ * conductor writes about the work still goes through the scrubber.
+ */
+export const EXEMPT_OPEN = "<!--craft:verbatim-->";
+export const EXEMPT_CLOSE = "<!--/craft:verbatim-->";
+
+/** Wrap a block so `scrubPayload` passes it through untouched. */
+export function verbatim(text: string): string {
+	return `${EXEMPT_OPEN}\n${text}\n${EXEMPT_CLOSE}`;
+}
+
+/**
+ * Split on exempt regions, returning alternating [scrubbable, verbatim, ...]
+ * segments. An unclosed marker leaves the remainder verbatim: failing to scrub
+ * is a defect the breach counter reports, while wrongly scrubbing a survivor
+ * silently destroys evidence.
+ */
+export function splitExempt(text: string): Array<{ text: string; exempt: boolean }> {
+	const parts: Array<{ text: string; exempt: boolean }> = [];
+	let rest = text;
+	while (rest.length > 0) {
+		const open = rest.indexOf(EXEMPT_OPEN);
+		if (open === -1) {
+			parts.push({ text: rest, exempt: false });
+			break;
+		}
+		if (open > 0) parts.push({ text: rest.slice(0, open), exempt: false });
+		const after = open + EXEMPT_OPEN.length;
+		const close = rest.indexOf(EXEMPT_CLOSE, after);
+		if (close === -1) {
+			parts.push({ text: rest.slice(open), exempt: true });
+			break;
+		}
+		parts.push({ text: rest.slice(open, close + EXEMPT_CLOSE.length), exempt: true });
+		rest = rest.slice(close + EXEMPT_CLOSE.length);
+	}
+	return parts;
+}
+
+/**
  * Scrub every payload field in place. Returns the distinct signals removed
  * across all fields. Mutates `input` — pi's `tool_call` hook patches arguments
  * by mutation, and the scrubbed payload is what the reviewer must actually see.
+ *
+ * Regions between the verbatim markers are copied through unchanged.
  */
 export function scrubPayload(input: Record<string, unknown>, self?: string): string[] {
 	const hits: string[] = [];
 	for (const field of PAYLOAD_FIELDS) {
 		const value = input[field];
 		if (typeof value !== "string" || !value) continue;
-		const result = scrub(value, self);
-		if (result.hits.length === 0) continue;
-		input[field] = result.text;
-		for (const h of result.hits) if (!hits.includes(h)) hits.push(h);
+		const segments = splitExempt(value);
+		let changed = false;
+		const rebuilt = segments
+			.map((seg) => {
+				if (seg.exempt) return seg.text;
+				const result = scrub(seg.text, self);
+				if (result.hits.length === 0) return seg.text;
+				changed = true;
+				for (const h of result.hits) if (!hits.includes(h)) hits.push(h);
+				return result.text;
+			})
+			.join("");
+		if (changed) input[field] = rebuilt;
 	}
 	return hits;
 }

@@ -275,3 +275,21 @@ test("complaints carry the run's cost so the expensive ones can be ranked first"
 		cleanup();
 	}
 });
+
+test("mutation results are summarised, and absent when mutation was skipped", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const ran = s.openRun({ host: "pi", cwd: "/tmp/mr", repo: "mr", mode: "full" });
+		s.enterPhase(ran.run_id, "R");
+		s.exitPhase(ran.run_id, "R", { mutants_tested: 199, mutants_survived: 37 });
+		assert.match(summarize(s.loadAll()), /mutants 162\/199 killed, 37 to adjudicate/);
+
+		const skipped = s.openRun({ host: "pi", cwd: "/tmp/ms", repo: "ms", mode: "full" });
+		s.enterPhase(skipped.run_id, "R");
+		s.exitPhase(skipped.run_id, "R", { decisions: 1 });
+		const onlySkipped = summarize(s.loadAll().filter((r) => r.run_id === skipped.run_id));
+		assert.ok(!onlySkipped.includes("mutants"), "a skip must not render as a clean sweep");
+	} finally {
+		cleanup();
+	}
+});

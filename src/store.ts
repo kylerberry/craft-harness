@@ -635,6 +635,12 @@ export function summarize(runs: Run[]): string {
 			const dev = render.plan_deviations ?? 0;
 			lines.push(`  decisions ${render.decisions}${dev > 0 ? `, ${dev} deviating from plan` : ""}`);
 		}
+		// Absent means mutation was skipped, which is not the same as a clean sweep —
+		// so this line appears only when something was actually measured.
+		if (render?.mutants_tested !== undefined) {
+			const survived = render.mutants_survived ?? 0;
+			lines.push(`  mutants ${render.mutants_tested - survived}/${render.mutants_tested} killed, ${survived} to adjudicate`);
+		}
 		const s = run.seams;
 		lines.push(
 			`  seams  counsel≠C=${fmtSeam(s.counsel_family_differs_from_c)}  A≠R=${fmtSeam(s.a_family_differs_from_r)}  T≠R=${fmtSeam(s.t_family_differs_from_r)}`,

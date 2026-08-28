@@ -819,3 +819,32 @@ test("phaseTotalsByVersion keeps v3 and v4 counsel apart", () => {
 		cleanup();
 	}
 });
+
+test("R records mutation counts alongside its decision counts", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/mut", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "R", { agent: "craft-builder" });
+		s.exitPhase(run.run_id, "R", { decisions: 3, plan_deviations: 1, mutants_tested: 199, mutants_survived: 37 });
+		const r = s.get(run.run_id)!.phases.find((p) => p.name === "R")!;
+		assert.equal(r.mutants_tested, 199);
+		assert.equal(r.mutants_survived, 37);
+		assert.equal(r.decisions, 3);
+	} finally {
+		cleanup();
+	}
+});
+
+test("a run where mutation was skipped records no mutation counts at all", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/skip", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "R");
+		s.exitPhase(run.run_id, "R", { decisions: 2 });
+		const r = s.get(run.run_id)!.phases.find((p) => p.name === "R")!;
+		assert.equal(r.mutants_tested, undefined, "absent, not zero — a skip is not a clean sweep");
+		assert.equal(r.mutants_survived, undefined);
+	} finally {
+		cleanup();
+	}
+});
