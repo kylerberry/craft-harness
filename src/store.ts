@@ -473,6 +473,7 @@ function fold(byId: Map<string, Run>, ev: LogEvent, finalMode?: Map<string, Mode
 			p.ended_at = null;
 			pushUnique(p.agents, ev.agent);
 			if (ev.agent) p.agent = ev.agent;
+			p.cycles = (p.cycles ?? 0) + 1;
 			run.open_phase = ev.phase;
 			run.phase_entries += 1;
 			run.seams = computeSeams(run);
@@ -480,6 +481,12 @@ function fold(byId: Map<string, Run>, ev: LogEvent, finalMode?: Map<string, Mode
 		}
 		case "phase_exit": {
 			const p = closePhase(run, ev.phase, ev.at);
+			// Accumulate before assigning: `Object.assign` overwrites, so a phase that
+			// failed, was fixed, and passed would otherwise fold to a clean pass and
+			// erase every finding that caused the loop.
+			if (ev.fields?.blocking_findings) {
+				p.blocking_findings_total = (p.blocking_findings_total ?? 0) + ev.fields.blocking_findings;
+			}
 			if (ev.fields) Object.assign(p, stripUndefined(normalizeFields(ev.fields)));
 			if (run.open_phase === ev.phase) run.open_phase = null;
 			run.seams = computeSeams(run);
@@ -654,6 +661,12 @@ export function summarize(runs: Run[]): string {
 			const model = p.model ?? p.models[0] ?? "-";
 			const guessed = p.backfilled_cost_usd > 0 ? `  (backfilled $${p.backfilled_cost_usd.toFixed(4)})` : "";
 			const blinded = p.blinding_scrubs > 0 ? `  (blinded ${p.blinding_scrubs})` : "";
+			// A phase entered more than once argued with the next one. Only the final
+			// verdict survives the fold, so without this the loop is invisible.
+			const looped =
+				(p.cycles ?? 0) > 1
+					? `  (${p.cycles} cycles, ${p.blocking_findings_total ?? 0} findings total)`
+					: "";
 			// Tokens, not just dollars: a subscription-billed phase reports $0 and would
 			// otherwise read as no work at all. Notional is what closes that gap.
 			const tok = totalTokens(p.tokens);
@@ -667,7 +680,7 @@ export function summarize(runs: Run[]): string {
 							: "$    n/a"
 						: "$0.0000";
 			lines.push(
-				`  ${p.name.padEnd(13)}  ${spend}  ${(p.duration_ms / 1000).toFixed(1)}s  ${p.turns}t ${p.tool_calls}tools  ${fmtTokens(p.tokens)}  ${model}${guessed}${blinded}`,
+				`  ${p.name.padEnd(13)}  ${spend}  ${(p.duration_ms / 1000).toFixed(1)}s  ${p.turns}t ${p.tool_calls}tools  ${fmtTokens(p.tokens)}  ${model}${guessed}${blinded}${looped}`,
 			);
 		}
 		// A `dag` supervisor has no phases by design — orchestration is its work — so
@@ -705,7 +718,7 @@ export function fmtSeam(v: boolean | null): string {
 }
 
 export interface Complaint {
-	kind: "ungated" | "stale-open" | "costless-model" | "unattributed" | "unverified-pass";
+	kind: "ungated" | "stale-open" | "costless-model" | "unattributed" | "unverified-pass" | "fix-without-findings";
 	run_id?: string;
 	detail: string;
 	cost_usd: number;
@@ -735,6 +748,27 @@ export function diagnose(runs: Run[], now = Date.now(), staleHours = 12): Compla
 				detail: `${run.repo ?? run.cwd}: started ${run.started_at}, no phase ever entered`,
 				cost_usd: runCost,
 			});
+		}
+		// Fix exists to resolve blockers. Entering it when Assess and Tighten both
+		// passed means the phase sequence is being emitted mechanically rather than
+		// followed, and the work it does is unbudgeted by definition.
+		const fix = run.phases.find((p) => p.name === "F");
+		if (fix?.started_at) {
+			const assess = run.phases.find((p) => p.name === "A");
+			const tighten = run.phases.find((p) => p.name === "T");
+			const blockers =
+				(assess?.blocking_findings_total ?? 0) > 0 ||
+				(tighten?.p0_count ?? 0) > 0 ||
+				assess?.verdict === "fail" ||
+				tighten?.t_status === "fail";
+			if (!blockers) {
+				out.push({
+					kind: "fix-without-findings",
+					run_id: run.run_id,
+					detail: `${run.repo ?? run.cwd}: F ran with no blocking finding from A or T`,
+					cost_usd: fix.notional_cost_usd ?? fix.cost_usd,
+				});
+			}
 		}
 		// A red tree is blocked at the gate; a tree nobody checked is not, so it is
 		// the case that needs surfacing.

@@ -306,3 +306,105 @@ test("mutation results are summarised, and absent when mutation was skipped", ()
 		cleanup();
 	}
 });
+
+// --- loops: only the last exit survives the fold, so cycles must be counted ---
+
+test("a phase that failed and was re-reviewed keeps its cycle count and total findings", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/loop", repo: "loop", mode: "full" });
+		// The real shape: A fails, F fixes, A runs again and passes.
+		s.enterPhase(run.run_id, "A");
+		s.exitPhase(run.run_id, "A", { verdict: "fail", blocking_findings: 3 });
+		s.enterPhase(run.run_id, "F");
+		s.exitPhase(run.run_id, "F");
+		s.enterPhase(run.run_id, "A");
+		s.exitPhase(run.run_id, "A", { verdict: "fail", blocking_findings: 2 });
+		s.enterPhase(run.run_id, "A");
+		s.exitPhase(run.run_id, "A", { verdict: "pass", blocking_findings: 0 });
+
+		const a = s.get(run.run_id)!.phases.find((p) => p.name === "A")!;
+		assert.equal(a.verdict, "pass", "the final verdict still wins");
+		assert.equal(a.blocking_findings, 0, "as does the final count");
+		assert.equal(a.cycles, 3, "but the loop is no longer invisible");
+		assert.equal(a.blocking_findings_total, 5, "and the findings that caused it survive");
+	} finally {
+		cleanup();
+	}
+});
+
+test("a phase entered once reports one cycle and is not annotated", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/once", repo: "once", mode: "full" });
+		s.enterPhase(run.run_id, "A");
+		s.exitPhase(run.run_id, "A", { verdict: "pass" });
+		const a = s.get(run.run_id)!.phases.find((p) => p.name === "A")!;
+		assert.equal(a.cycles, 1);
+		assert.ok(!summarize(s.loadAll()).includes("cycles"), "no annotation for a clean first pass");
+	} finally {
+		cleanup();
+	}
+});
+
+test("summarize annotates a looped phase with its cycles and total findings", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/ann", repo: "ann", mode: "full" });
+		s.enterPhase(run.run_id, "A");
+		s.exitPhase(run.run_id, "A", { verdict: "fail", blocking_findings: 2 });
+		s.enterPhase(run.run_id, "A");
+		s.exitPhase(run.run_id, "A", { verdict: "pass" });
+		assert.match(summarize(s.loadAll()), /\(2 cycles, 2 findings total\)/);
+	} finally {
+		cleanup();
+	}
+});
+
+test("doctor flags a Fix phase that ran with nothing to fix", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/nofix", repo: "nofix", mode: "full" });
+		s.enterPhase(run.run_id, "A");
+		s.exitPhase(run.run_id, "A", { verdict: "pass", blocking_findings: 0 });
+		s.enterPhase(run.run_id, "F");
+		s.exitPhase(run.run_id, "F");
+		assert.ok(diagnose(s.loadAll()).some((c) => c.kind === "fix-without-findings"));
+	} finally {
+		cleanup();
+	}
+});
+
+test("a Fix that followed a real failure is not flagged, even after the re-review passed", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/realfix", repo: "realfix", mode: "full" });
+		s.enterPhase(run.run_id, "A");
+		s.exitPhase(run.run_id, "A", { verdict: "fail", blocking_findings: 2 });
+		s.enterPhase(run.run_id, "F");
+		s.exitPhase(run.run_id, "F");
+		s.enterPhase(run.run_id, "A");
+		s.exitPhase(run.run_id, "A", { verdict: "pass", blocking_findings: 0 });
+		// The folded verdict is `pass` and folded findings are 0 — only the running
+		// total distinguishes this from a Fix that had nothing to do.
+		assert.ok(!diagnose(s.loadAll()).some((c) => c.kind === "fix-without-findings"));
+	} finally {
+		cleanup();
+	}
+});
+
+test("a Fix following a T P0 finding is not flagged", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/p0", repo: "p0", mode: "full" });
+		s.enterPhase(run.run_id, "A");
+		s.exitPhase(run.run_id, "A", { verdict: "pass" });
+		s.enterPhase(run.run_id, "T");
+		s.exitPhase(run.run_id, "T", { t_status: "fail", p0_count: 1 });
+		s.enterPhase(run.run_id, "F");
+		s.exitPhase(run.run_id, "F");
+		assert.ok(!diagnose(s.loadAll()).some((c) => c.kind === "fix-without-findings"));
+	} finally {
+		cleanup();
+	}
+});

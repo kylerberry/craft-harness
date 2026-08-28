@@ -94,10 +94,24 @@ export interface PhaseRecord {
 	afk_hitl_status?: string;
 	criteria_provenance?: string;
 	counsel_status?: string;
+	/**
+	 * Findings from the *most recent* exit. A phase re-entered after a fix reports
+	 * again, and the later report overwrites this one — see `blocking_findings_total`
+	 * for the figure that survives a loop.
+	 */
 	blocking_findings?: number;
 	probe_required?: boolean;
+	/** Verdict from the most recent exit. A failure followed by a pass reads `pass`. */
 	verdict?: string;
+	/**
+	 * Times this phase was entered. A review that fails, waits for a fix, and reviews
+	 * again is the same phase three times over, and only the last exit survives the
+	 * fold — so without this a five-cycle argument between Assess and Fix is
+	 * indistinguishable from a clean first-time pass.
+	 */
 	cycles?: number;
+	/** Blocking findings summed across every cycle, rather than only the last. */
+	blocking_findings_total?: number;
 	t_status?: string;
 	p0_count?: number;
 	non_p0_count?: number;
