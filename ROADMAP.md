@@ -16,7 +16,7 @@ decision can be resumed without re-deriving it.
 
 **Status:** open risk, no enforcement possible
 
-Run versioning is built (see `craft-metrics/README.md`). What is *not* solved: the bump
+Run versioning is built (see `craft-tooling/README.md`). What is *not* solved: the bump
 itself is a judgment call, and nothing can check it. The rule is "bump when a phase's
 shape changes — agents added or removed, duties moved, gates introduced; not for
 wording." Miss one and v4 quietly becomes two different workflows sharing a label, which
@@ -46,7 +46,7 @@ silently ~$0 for subscription models (Codex on a ChatGPT plan burns real tokens 
 marginal cost), so any phase running mostly on a subscription model looked artificially
 cheap. `craft-metrics` now also computes **notional cost** — tokens priced at list rate
 regardless of billing — which is the only figure comparable across phases. Numbers below
-are notional; see `craft-metrics/README.md` for how it's derived and its known caveats.
+are notional; see `craft-tooling/README.md` for how it's derived and its known caveats.
 
 | phase | notional $ | share | min/invoke |
 | --- | --- | --- | --- |
@@ -142,7 +142,7 @@ that, the change buys flexibility but not the evaluation it is meant to enable.
 
 **Status:** known limitation · low priority
 
-Notional pricing is built (see `craft-metrics/README.md`). One gap remains: some Codex
+Notional pricing is built (see `craft-tooling/README.md`). One gap remains: some Codex
 models (`sol`, `terra`) charge a higher rate above a per-request context threshold
 (`tiers: [{ inputTokensAbove: 272000, ... }]`). Tokens are summed across every request in
 a phase, so which individual requests crossed the threshold is not reconstructable from
@@ -340,14 +340,56 @@ First step is no longer analysis — it is **collecting any v4 counsel data at a
 
 ---
 
-## Objective test-weakening detection
+## Wire craft-mutate into Render
 
-**Status:** idea
+**Status:** tool built, integration not started
 
-A now judges whether tests were weakened to pass — deleted assertions, loosened matchers,
-skipped cases, fixtures rewritten to match wrong output. That judgment is currently a
-reading, and it is the one A duty with a mechanical alternative: coverage delta against the
-base, or mutation testing on changed lines.
+`craft-mutate` exists in `craft-tooling` and works: diff-scoped mutation testing, one JSON
+object out, survivors listed with the test files that ran and still passed. Measured 6.6s
+for a 412-line diff, ~2s for a 20-line one. What remains is the CRAFTS side.
 
-Heavier than it sounds, and mutation testing is slow enough to matter at these phase costs.
-Worth it only if A's readings prove unreliable in practice — check before building.
+Design settled in discussion:
+
+- **Runs in R**, after verify goes green — mutation on a red tree is meaningless. Not part
+  of the verify spine: verify is a pass/fail gate, this is a signal.
+- **Scoped to changed line ranges**, not whole files. Both cheaper and more readable —
+  whole-file scope surfaces pre-existing survivors Render did not cause.
+- **Does not gate.** Survivors become findings A adjudicates, same shape as plan
+  deviations. Some are equivalent mutants and correctly ignored; that call is a judgment,
+  which is exactly what A is for.
+- **Base ref captured at R start**, before any edits. A DAG conductor commits as it goes,
+  so `HEAD` at R exit would diff against its own work and see nothing.
+- **60s cap**, then skip. Missing Stryker config skips silently — most repos have none.
+- **TS/JS only** in practice. The output shape generalises across backends; the
+  scope-to-changed-lines input does not (`cargo-mutants` takes files, not ranges), so a
+  second backend would likely degrade to file scope.
+
+Remaining work: capture the base ref in R, call the tool, put survivors in A's payload,
+record `--mutants-tested` / `--mutants-survived` on R exit, and retire A's manual hunt for
+weakened tests so this replaces turns instead of adding a step.
+
+**The measurement that decides whether it worked:** A's turn count. If mutation lands and
+A still runs ~20.8 turns, the feature failed at its actual job, which was never "find
+mutants" but "stop A from hunting."
+
+---
+
+## Claude Code host adapter
+
+**Status:** not started · deliberately deferred
+
+`craft-tooling` is host-agnostic except for `extensions/pi.ts` — 282 lines against ~1,900
+of host-neutral code. Everything else (store, schema, pricing, versioning, blinding,
+mutation) works anywhere.
+
+A Claude Code adapter would need to supply the same three things pi's extension does:
+per-turn usage with the phase open at the time, the `tool_call` interception that scrubs
+authorship from reviewer payloads before spawn, and run open/close detection. Claude Code
+has hooks in the same family, so the shape should carry over.
+
+Also needed: a price source. Notional pricing reads pi's local model registry
+(`~/.pi/agent/models-store.json`), which Claude Code has no equivalent of — that would
+need a bundled table or another source.
+
+Not worth doing on speculation. It becomes worth doing if CRAFTS ever needs to run on
+Claude Code, or ship to someone who does.
