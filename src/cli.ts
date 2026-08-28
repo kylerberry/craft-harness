@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { basename } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	Store,
 	defaultStorePath,
@@ -11,6 +13,46 @@ import {
 	type PhaseTotal,
 } from "./store.ts";
 import { KINDS, PHASES, type Host, type Kind, type Mode, type Outcome, type PhaseName } from "./schema.ts";
+import type { PriceTable } from "./pricing.ts";
+
+/**
+ * Everything the CLI touches outside itself. Injected rather than reached for so
+ * the command surface can be tested at all: a parser that calls `process.exit`
+ * on bad input takes the test runner down with it, which is why none of this was
+ * covered before.
+ */
+export interface Io {
+	write(s: string): void;
+	error(s: string): void;
+	cwd(): string;
+	now(): number;
+	storePath(): string;
+	prices?: PriceTable;
+}
+
+/** Thrown by `fail` to unwind out of a nested parser. Caught in `run`. */
+export class ExitSignal extends Error {
+	// Declared and assigned explicitly: parameter properties are a TypeScript
+	// transform, and this runs under node's strip-only type removal.
+	code: number;
+	constructor(code: number) {
+		super(`exit ${code}`);
+		this.code = code;
+	}
+}
+
+export const defaultIo: Io = {
+	write: (s) => process.stdout.write(s),
+	error: (s) => console.error(s),
+	cwd: () => process.cwd(),
+	now: () => Date.now(),
+	storePath: () => process.env.CRAFT_METRICS_PATH ?? defaultStorePath(),
+};
+
+function fail(io: Io, message: string, code = 2): never {
+	io.error(message);
+	throw new ExitSignal(code);
+}
 
 const USAGE = `craft-metrics — phase-grained CRAFT run collector
 
@@ -57,80 +99,71 @@ function num(flag: string, argv: string[]): number | undefined {
 }
 
 /** Token counts are only ever read at a glance; six significant digits are noise. */
-function mtok(n: number): string {
+export function mtok(n: number): string {
 	if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`.padStart(6);
 	if (n >= 1e3) return `${(n / 1e3).toFixed(0)}k`.padStart(6);
 	return String(n).padStart(6);
 }
 
-function requireArg(flag: string, argv: string[]): string {
+function requireArg(flag: string, argv: string[], io: Io): string {
 	const v = arg(flag, argv);
-	if (!v) {
-		console.error(`missing ${flag}`);
-		process.exit(2);
-	}
+	if (!v) fail(io, `missing ${flag}`);
 	return v;
 }
 
-function parsePhase(argv: string[]): PhaseName {
-	const p = requireArg("--phase", argv);
-	if (!PHASES.includes(p as PhaseName) || p === "unattributed") {
-		console.error(`invalid --phase ${p}`);
-		process.exit(2);
-	}
+function parsePhase(argv: string[], io: Io): PhaseName {
+	const p = requireArg("--phase", argv, io);
+	// `unattributed` and `supervisor` are derived buckets, not gates a caller enters.
+	if (!PHASES.includes(p as PhaseName) || p === "unattributed") fail(io, `invalid --phase ${p}`);
 	return p as PhaseName;
 }
 
-function parseKind(argv: string[]): Kind {
-	const k = requireArg("--kind", argv);
-	if (!KINDS.includes(k as Kind)) {
-		console.error(`invalid --kind ${k} (use ${KINDS.join("|")})`);
-		process.exit(2);
-	}
+function parseKind(argv: string[], io: Io): Kind {
+	const k = requireArg("--kind", argv, io);
+	if (!KINDS.includes(k as Kind)) fail(io, `invalid --kind ${k} (use ${KINDS.join("|")})`);
 	return k as Kind;
 }
 
-function parseMode(argv: string[]): Mode {
-	const m = requireArg("--mode", argv);
+function parseMode(argv: string[], io: Io): Mode {
+	const m = requireArg("--mode", argv, io);
 	if (m !== "full" && m !== "hitl" && m !== "lite" && m !== "dag") {
-		console.error(`invalid --mode ${m} (use full, hitl, lite, or dag)`);
-		process.exit(2);
+		fail(io, `invalid --mode ${m} (use full, hitl, lite, or dag)`);
 	}
 	return m;
 }
 
-function main(argv: string[]): void {
+export function main(argv: string[], io: Io = defaultIo): number {
 	const cmd = argv[0];
 	if (!cmd || cmd === "-h" || cmd === "--help") {
-		process.stdout.write(USAGE);
-		return;
+		io.write(USAGE);
+		return 0;
 	}
 	const rest = argv.slice(1);
-	const store = new Store(process.env.CRAFT_METRICS_PATH ?? defaultStorePath());
+	const store = new Store(io.storePath(), io.prices);
 
 	switch (cmd) {
 		case "start": {
 			const run = store.openRun({
 				run_id: arg("--run", rest),
 				host: (arg("--host", rest) as Host | undefined) ?? "unknown",
-				cwd: arg("--cwd", rest) ?? process.cwd(),
-				repo: arg("--repo", rest) ?? basename(arg("--cwd", rest) ?? process.cwd()),
-				mode: parseMode(rest),
-				kind: parseKind(rest),
+				cwd: arg("--cwd", rest) ?? io.cwd(),
+				repo: arg("--repo", rest) ?? basename(arg("--cwd", rest) ?? io.cwd()),
+				mode: parseMode(rest, io),
+				kind: parseKind(rest, io),
 				craft_version: arg("--craft-version", rest),
 			});
-			process.stdout.write(run.run_id + "\n");
-			return;
+			io.write(run.run_id + "\n");
+			return 0;
 		}
 		case "enter": {
-			const run = store.enterPhase(requireArg("--run", rest), parsePhase(rest), {
+			const run = store.enterPhase(requireArg("--run", rest, io), parsePhase(rest, io), {
 				agent: arg("--agent", rest),
 			});
-			process.stdout.write(run.run_id + "\n");
-			return;
+			io.write(run.run_id + "\n");
+			return 0;
 		}
 		case "exit": {
-			const run = store.exitPhase(requireArg("--run", rest), parsePhase(rest), {
+			const run = store.exitPhase(requireArg("--run", rest, io), parsePhase(rest, io), {
 				security_triggers: arg("--security-triggers", rest)?.split(",").filter(Boolean),
 				blocking_questions: num("--blocking-questions", rest),
 				afk_hitl_status: arg("--afk-hitl-status", rest),
@@ -146,12 +179,12 @@ function main(argv: string[]): void {
 				decisions: num("--decisions", rest),
 				plan_deviations: num("--plan-deviations", rest),
 			});
-			process.stdout.write(run.run_id + "\n");
-			return;
+			io.write(run.run_id + "\n");
+			return 0;
 		}
 		case "usage": {
-			const run = store.recordUsage(requireArg("--run", rest), {
-				phase: has("--phase", rest) ? parsePhase(rest) : undefined,
+			const run = store.recordUsage(requireArg("--run", rest, io), {
+				phase: has("--phase", rest) ? parsePhase(rest, io) : undefined,
 				model: arg("--model", rest),
 				provider: arg("--provider", rest),
 				thinking: arg("--thinking", rest),
@@ -171,42 +204,39 @@ function main(argv: string[]): void {
 				failover: has("--failover", rest),
 				blinding_scrubs: num("--blinding-scrubs", rest),
 			});
-			process.stdout.write(run.run_id + "\n");
-			return;
+			io.write(run.run_id + "\n");
+			return 0;
 		}
 		case "verify": {
 			const code = num("--exit-code", rest);
-			if (code === undefined || Number.isNaN(code)) {
-				console.error("missing or invalid --exit-code");
-				process.exit(2);
-			}
-			const run = store.recordVerify(requireArg("--run", rest), requireArg("--command", rest), code);
-			process.stdout.write(run.run_id + "\n");
-			return;
+			if (code === undefined || Number.isNaN(code)) fail(io, "missing or invalid --exit-code");
+			const run = store.recordVerify(requireArg("--run", rest, io), requireArg("--command", rest, io), code);
+			io.write(run.run_id + "\n");
+			return 0;
 		}
 		case "pause":
-			store.pauseHitl(requireArg("--run", rest));
-			return;
+			store.pauseHitl(requireArg("--run", rest, io));
+			return 0;
 		case "resume":
-			store.resumeHitl(requireArg("--run", rest));
-			return;
+			store.resumeHitl(requireArg("--run", rest, io));
+			return 0;
 		case "mode":
-			store.setMode(requireArg("--run", rest), parseMode(rest));
-			return;
+			store.setMode(requireArg("--run", rest, io), parseMode(rest, io));
+			return 0;
 		case "kind":
-			store.setKind(requireArg("--run", rest), parseKind(rest));
-			return;
+			store.setKind(requireArg("--run", rest, io), parseKind(rest, io));
+			return 0;
 		case "end": {
 			const outcome = (arg("--outcome", rest) as Outcome | undefined) ?? "completed";
-			store.endRun(requireArg("--run", rest), outcome);
-			return;
+			store.endRun(requireArg("--run", rest, io), outcome);
+			return 0;
 		}
 		case "current": {
-			const cwd = arg("--cwd", rest) ?? process.cwd();
+			const cwd = arg("--cwd", rest) ?? io.cwd();
 			const run = store.latestOpenForCwd(cwd);
-			if (!run) process.exit(1);
-			process.stdout.write(run.run_id + "\n");
-			return;
+			if (!run) return 1;
+			io.write(run.run_id + "\n");
+			return 0;
 		}
 		case "show": {
 			const id = arg("--run", rest);
@@ -214,30 +244,30 @@ function main(argv: string[]): void {
 			let runs = store.loadAll();
 			if (id) runs = runs.filter((r) => r.run_id === id || r.run_id.startsWith(id));
 			if (last) runs = runs.slice(-last);
-			process.stdout.write(summarize(runs) + "\n");
-			return;
+			io.write(summarize(runs) + "\n");
+			return 0;
 		}
 		case "doctor": {
-			const complaints = diagnose(store.loadAll(), Date.now(), num("--stale-hours", rest) ?? 12);
+			const complaints = diagnose(store.loadAll(), io.now(), num("--stale-hours", rest) ?? 12);
 			if (complaints.length === 0) {
-				process.stdout.write("no data-quality problems found\n");
-				return;
+				io.write("no data-quality problems found\n");
+				return 0;
 			}
 			for (const c of complaints) {
 				const id = c.run_id ? `${c.run_id.slice(0, 8)} ` : "";
 				const cost = c.cost_usd > 0 ? ` [$${c.cost_usd.toFixed(2)}]` : "";
-				process.stdout.write(`${c.kind.padEnd(15)} ${id}${c.detail}${cost}\n`);
+				io.write(`${c.kind.padEnd(15)} ${id}${c.detail}${cost}\n`);
 			}
-			process.exitCode = 1;
-			return;
+			// Nonzero so `craft-metrics doctor` can gate a script.
+			return 1;
 		}
 		case "totals": {
 			const runs = store.loadAll();
 			const header = "phase          n     cost     notional      time      turns      in     out   cache\n";
 			const writeTable = (totals: Map<PhaseName, PhaseTotal>) => {
-				process.stdout.write(header);
+				io.write(header);
 				for (const [name, t] of totals) {
-					process.stdout.write(
+					io.write(
 						`${name.padEnd(14)} ${String(t.n).padStart(3)}  $${t.cost.toFixed(4).padStart(8)}  $${t.notional.toFixed(4).padStart(8)}  ${(t.ms / 1000).toFixed(1).padStart(8)}s  ${String(t.turns).padStart(5)}  ${mtok(t.tokens.input)}  ${mtok(t.tokens.output)}  ${mtok(t.tokens.cacheRead)}\n`,
 					);
 				}
@@ -255,50 +285,60 @@ function main(argv: string[]): void {
 						(r) => (r.craft_version ?? "unknown") === version && r.craft_version_source === "inferred",
 					).length;
 					const mark = inferred > 0 ? ` (${inferred} inferred)` : "";
-					process.stdout.write(`\n── CRAFTS v${version} — ${n} run${n === 1 ? "" : "s"}${mark}\n`);
+					io.write(`\n── CRAFTS v${version} — ${n} run${n === 1 ? "" : "s"}${mark}\n`);
 					writeTable(totals);
 				}
 			}
-			process.stdout.write(
+			io.write(
 				"\n`cost` is what you paid; `notional` is what the tokens are worth at list price\n" +
 					"(fills in $0 subscription phases). Compare phases by notional, not cost.\n" +
 					"Split by workflow version — phases changed shape between versions. `--all` blends.\n",
 			);
-			return;
+			return 0;
 		}
 		case "models": {
 			const rows = modelTotals(store.loadAll());
 			if (rows.length === 0) {
-				process.stdout.write("no model usage recorded\n");
-				return;
+				io.write("no model usage recorded\n");
+				return 0;
 			}
-			process.stdout.write(
+			io.write(
 				"model                          turns      cost   notional      in     out   cache\n",
 			);
 			for (const m of rows) {
 				const cost = m.costless ? "     n/a" : `$${m.cost.toFixed(2).padStart(7)}`;
 				const notional = m.unpriced ? "   unpriced" : `  $${m.notional.toFixed(2).padStart(8)}`;
-				process.stdout.write(
+				io.write(
 					`${m.model.padEnd(29)} ${String(m.turns).padStart(5)}  ${cost}${notional}  ${mtok(m.tokens.input)}  ${mtok(m.tokens.output)}  ${mtok(m.tokens.cacheRead)}\n`,
 				);
 			}
 			if (rows.some((m) => m.costless)) {
-				process.stdout.write(
+				io.write(
 					"\nn/a = subscription-billed, no per-token price reported. Compare tokens, not cost.\n",
 				);
 			}
-			return;
+			return 0;
 		}
 		default:
-			console.error(`unknown command ${cmd}`);
-			process.stdout.write(USAGE);
-			process.exit(2);
+			io.error(`unknown command ${cmd}`);
+			io.write(USAGE);
+			return 2;
 	}
 }
 
-try {
-	main(process.argv.slice(2));
-} catch (err) {
-	console.error(err instanceof Error ? err.message : String(err));
-	process.exit(2);
+/** Entry point: turn an ExitSignal or a thrown error into a process exit code. */
+export function run(argv: string[], io: Io = defaultIo): number {
+	try {
+		return main(argv, io);
+	} catch (err) {
+		if (err instanceof ExitSignal) return err.code;
+		io.error(err instanceof Error ? err.message : String(err));
+		return 2;
+	}
+}
+
+// Self-execute only when run as a program, never when a test imports this file.
+// Compared through realpath so the bin shim's resolved path matches.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	process.exit(run(process.argv.slice(2)));
 }
