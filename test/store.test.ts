@@ -893,3 +893,84 @@ test("a declared version beats what inference would have concluded", () => {
 		cleanup();
 	}
 });
+
+test("switching a run to dag moves its already-recorded cost to supervisor", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		// The real sequence: a supervisor session is opened as `full` by the host,
+		// spends, and is corrected afterwards.
+		const run = s.openRun({ host: "pi", cwd: "/tmp/sup", repo: "sup", mode: "full" });
+		s.recordUsage(run.run_id, { cost_usd: 36.06, turns: 40, tool_name: "subagent" });
+		assert.equal(
+			s.get(run.run_id)!.phases.find((p) => p.name === "unattributed")!.cost_usd,
+			36.06,
+			"before the correction it is orphaned",
+		);
+
+		s.setMode(run.run_id, "dag");
+		const after = s.get(run.run_id)!;
+		assert.equal(after.mode, "dag");
+		assert.equal(after.phases.find((p) => p.name === "supervisor")!.cost_usd, 36.06);
+		assert.ok(!after.phases.find((p) => p.name === "unattributed"), "and nothing is left behind");
+	} finally {
+		cleanup();
+	}
+});
+
+test("switching away from dag moves supervisor cost back out", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/back", repo: "back", mode: "dag" });
+		s.recordUsage(run.run_id, { cost_usd: 5, turns: 1 });
+		assert.equal(s.get(run.run_id)!.phases.find((p) => p.name === "supervisor")!.cost_usd, 5);
+		s.setMode(run.run_id, "full");
+		const after = s.get(run.run_id)!;
+		assert.ok(!after.phases.find((p) => p.name === "supervisor"));
+		assert.equal(after.phases.find((p) => p.name === "unattributed")!.cost_usd, 5);
+	} finally {
+		cleanup();
+	}
+});
+
+test("the last mode wins when a run is corrected more than once", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/multi", repo: "multi", mode: "full" });
+		s.recordUsage(run.run_id, { cost_usd: 2, turns: 1 });
+		s.setMode(run.run_id, "dag");
+		s.setMode(run.run_id, "hitl");
+		const after = s.get(run.run_id)!;
+		assert.equal(after.mode, "hitl");
+		assert.equal(after.phases.find((p) => p.name === "unattributed")!.cost_usd, 2);
+	} finally {
+		cleanup();
+	}
+});
+
+test("a mode correction does not disturb usage that was stamped with a phase", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/stamp", repo: "stamp", mode: "full" });
+		s.enterPhase(run.run_id, "R");
+		s.recordUsage(run.run_id, { cost_usd: 1, turns: 1 });
+		s.exitPhase(run.run_id, "R");
+		s.setMode(run.run_id, "dag");
+		const after = s.get(run.run_id)!;
+		assert.equal(after.phases.find((p) => p.name === "R")!.cost_usd, 1, "phase attribution still wins over mode");
+		assert.ok(!after.phases.find((p) => p.name === "supervisor"));
+	} finally {
+		cleanup();
+	}
+});
+
+test("the lite guard reads the corrected mode, not the one at open", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/guard", repo: "guard", mode: "full" });
+		s.enterPhase(run.run_id, "counsel"); // legal under full
+		s.setMode(run.run_id, "lite");
+		assert.throws(() => s.enterPhase(run.run_id, "T"), /mode=lite/, "the correction is what the guard enforces");
+	} finally {
+		cleanup();
+	}
+});

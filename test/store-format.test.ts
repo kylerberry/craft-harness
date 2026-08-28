@@ -138,6 +138,19 @@ test("an ungated run is called out, and a gated one is not", () => {
 	}
 });
 
+test("a dag supervisor is not called ungated — it has no phases by design", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const sup = s.openRun({ host: "pi", cwd: "/tmp/sup", repo: "sup", mode: "dag" });
+		s.recordUsage(sup.run_id, { cost_usd: 3, turns: 1 });
+		const text = summarize(s.loadAll().filter((r) => r.run_id === sup.run_id));
+		assert.ok(!text.includes("ungated"), "summarize must agree with diagnose here");
+		assert.match(text, /supervisor/);
+	} finally {
+		cleanup();
+	}
+});
+
 test("verify state renders green or red with the command and a count", () => {
 	const { store: s, cleanup } = tmpStore();
 	try {

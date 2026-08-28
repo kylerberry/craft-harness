@@ -177,8 +177,15 @@ export class Store {
 	}
 
 	loadAll(): Run[] {
+		const events = this.loadEvents();
+		// A run's mode decides where its usage lands — `dag` buckets to `supervisor`
+		// rather than `unattributed`. Folding events in order would resolve usage
+		// against whatever mode was known at the time, so a `mode` event appended
+		// later relabelled the run without moving a cent of its already-folded cost.
+		// Resolving the final mode up front makes a correction actually correct.
+		const finalMode = finalModes(events);
 		const byId = new Map<string, Run>();
-		for (const ev of this.loadEvents()) fold(byId, ev);
+		for (const ev of events) fold(byId, ev, finalMode);
 		const runs = [...byId.values()];
 		// Priced at read time, not folded from events: a price-table correction
 		// re-prices every historical run on the next `loadAll`, no migration needed.
@@ -414,7 +421,20 @@ export class Store {
 	}
 }
 
-function fold(byId: Map<string, Run>, ev: LogEvent): void {
+/**
+ * Each run's mode as of the end of the log, rather than as of the event being
+ * folded. Mode decides where usage lands, so resolving it up front is what lets
+ * a later `mode` correction move cost that was already recorded.
+ */
+function finalModes(events: LogEvent[]): Map<string, Mode> {
+	const modes = new Map<string, Mode>();
+	for (const ev of events) {
+		if (ev.t === "run_open" || ev.t === "mode") modes.set(ev.run_id, ev.mode);
+	}
+	return modes;
+}
+
+function fold(byId: Map<string, Run>, ev: LogEvent, finalMode?: Map<string, Mode>): void {
 	if (ev.t === "run_open") {
 		if (byId.has(ev.run_id)) return;
 		byId.set(ev.run_id, {
@@ -425,7 +445,8 @@ function fold(byId: Map<string, Run>, ev: LogEvent): void {
 			host: ev.host,
 			cwd: ev.cwd,
 			repo: ev.repo,
-			mode: ev.mode,
+			// The run's eventual mode, not the one declared at open. See `finalModes`.
+			mode: finalMode?.get(ev.run_id) ?? ev.mode,
 			kind: ev.kind,
 			craft_version: ev.craft_version,
 			outcome: "open",
@@ -649,7 +670,11 @@ export function summarize(runs: Run[]): string {
 				`  ${p.name.padEnd(13)}  ${spend}  ${(p.duration_ms / 1000).toFixed(1)}s  ${p.turns}t ${p.tool_calls}tools  ${fmtTokens(p.tokens)}  ${model}${guessed}${blinded}`,
 			);
 		}
-		if (run.phase_entries === 0) lines.push("  ! ungated — run started but no phase was ever entered");
+		// A `dag` supervisor has no phases by design — orchestration is its work — so
+		// flagging it here would contradict `diagnose`, which already exempts it.
+		if (run.phase_entries === 0 && run.mode !== "dag") {
+			lines.push("  ! ungated — run started but no phase was ever entered");
+		}
 		if (run.last_verify) {
 			const v = run.last_verify;
 			const mark = v.exit_code === 0 ? "green" : `RED (exit ${v.exit_code})`;
