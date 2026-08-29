@@ -1,0 +1,31 @@
+{
+	"name": "craft-tooling",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Scripting tools for the CRAFTS workflow (Pi + Claude Code)",
+	"bin": {
+		"craft-metrics": "./bin/craft-metrics.mjs",
+		"craft-mutate": "./bin/craft-mutate.mjs"
+	},
+	"scripts": {
+		"test": "node --test --experimental-strip-types test/*.test.ts",
+		"cli": "node --experimental-strip-types src/cli.ts"
+	},
+	"keywords": [
+		"pi-package",
+		"craft"
+	],
+	"pi": {
+		"extensions": [
+			"./extensions/pi.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"@stryker-mutator/core": "^10.0.0",
+		"@stryker-mutator/tap-runner": "^10.0.0"
+	}
+}
