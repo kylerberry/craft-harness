@@ -369,20 +369,40 @@ what it missed.
 
 ## Claude Code host adapter
 
-**Status:** not started · deliberately deferred
+**Status:** built · unmeasured on a real run
 
-`tooling` is host-agnostic except for `extensions/pi.ts` — 282 lines against ~1,900
-of host-neutral code. Everything else (store, schema, pricing, versioning, blinding,
-mutation) works anywhere.
+`extensions/claude-code.ts` supplies the same three things pi's extension does —
+per-turn usage against the phase open at the time, interception that scrubs authorship
+from a reviewer's payload before the subagent spawns, and run open/close detection —
+plus the price source that was the other blocker: `src/prices/anthropic.json`, merged
+underneath whatever the host's own registry knows.
 
-A Claude Code adapter would need to supply the same three things pi's extension does:
-per-turn usage with the phase open at the time, the `tool_call` interception that scrubs
-authorship from reviewer payloads before spawn, and run open/close detection. Claude Code
-has hooks in the same family, so the shape should carry over.
+Host became a comparison axis rather than a label in the same change. `totals` splits
+by workflow version *and* harness, `models` reports one row per host, and `doctor`
+flags a run belonging to neither. Turning that on immediately surfaced a Claude Code
+run that had been sitting inside the pi averages with zero usage recorded, quietly
+dragging every phase figure down — the argument for the split, in one observation.
 
-Also needed: a price source. Notional pricing reads pi's local model registry
-(`~/.pi/agent/models-store.json`), which Claude Code has no equivalent of — that would
-need a bundled table or another source.
+Three things a probe of a live session turned up, none of them documented, all of them
+silent corruption rather than crashes:
 
-Not worth doing on speculation. It becomes worth doing if CRAFTS ever needs to run on
-Claude Code, or ship to someone who does.
+- one API response is written to the transcript **once per content block**, sharing a
+  `requestId`, with usage that *grows* across the lines. Deduping on the per-line
+  `uuid` triples the bill; taking the first line reports 3 output tokens for a
+  184-token response
+- a subagent's `tool_response.usage` is only its **last message** — 225 tokens of an
+  actual 441. `SubagentStop` carries an undocumented `agent_transcript_path`, which is
+  the real source, and it works for background subagents too
+- hooks fired **inside** a subagent report the *parent's* `transcript_path`
+
+**What is still unknown: whether it attributes correctly under a real protocol run.**
+Every figure so far comes from synthetic transcripts and one smoke test. The
+measurement that settles it is a `/craft-lite` run on Claude Code followed by
+`show --last 1` — every phase carrying nonzero tokens and tool calls, `unattributed`
+near zero. Pi's first implementation failed exactly that check, at 86%.
+
+Two smaller unknowns, both cheap to settle on that same run: whether
+`hookSpecificOutput.updatedInput` is honoured (the blinding guarantee rests on it, and
+it is the one part of the design tested only against a mock), and what the per-tool-call
+hook costs in practice — 82 ms measured against a small store, where the real log is
+1.5 MB and growing.

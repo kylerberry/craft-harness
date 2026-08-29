@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyNotionalPricing, loadPriceTable, notionalCostForTokens } from "../src/pricing.ts";
+import {
+	applyNotionalPricing,
+	bundledPriceTablePath,
+	loadPriceTable,
+	mergePriceTables,
+	notionalCostForTokens,
+	type PriceTable,
+} from "../src/pricing.ts";
 import { emptyPhase, emptyTokens, type Run } from "../src/schema.ts";
 
 function tmpFile(content: string): { path: string; cleanup: () => void } {
@@ -38,6 +45,67 @@ test("loadPriceTable parses provider/id from the models-store.json shape", () =>
 		assert.equal(table.get("xai/nonexistent"), undefined);
 	} finally {
 		cleanup();
+	}
+});
+
+test("the bundled table prices the models Claude Code actually reports", () => {
+	// Read through the explicit-path route so this asserts the shipped file itself,
+	// not whatever this machine's pi registry happens to add on top.
+	const bundled = loadPriceTable(bundledPriceTablePath());
+	assert.deepEqual(bundled.get("anthropic/claude-opus-5"), {
+		input: 5,
+		output: 25,
+		cacheRead: 0.5,
+		cacheWrite: 6.25,
+	});
+	// Claude Code writes the dated Haiku id, not the alias — both must price.
+	assert.ok(bundled.get("anthropic/claude-haiku-4-5-20251001"));
+	// The prose block in the file is not a provider, and must not parse as one.
+	assert.equal(bundled.get("_comment/models"), undefined);
+});
+
+test("the host's registry wins over the bundled price for the same model", () => {
+	const bundled: PriceTable = new Map([
+		["anthropic/claude-opus-5", { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }],
+		["anthropic/claude-haiku-4-5", { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 }],
+	]);
+	const registry: PriceTable = new Map([
+		["anthropic/claude-opus-5", { input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5 }],
+		["xai/grok-4.6", { input: 2, output: 6, cacheRead: 0.5, cacheWrite: 0 }],
+	]);
+
+	const merged = mergePriceTables(bundled, registry);
+	assert.equal(merged.get("anthropic/claude-opus-5")!.input, 4, "the host knows its own routing better");
+	assert.equal(merged.get("anthropic/claude-haiku-4-5")!.input, 1, "and does not erase what it never listed");
+	assert.equal(merged.get("xai/grok-4.6")!.input, 2);
+	assert.equal(bundled.size, 2, "inputs are left alone");
+	assert.equal(registry.size, 2);
+});
+
+test("an explicit price table is used exactly, with no bundled prices merged under it", () => {
+	const { path, cleanup } = tmpFile(JSON.stringify({ xai: { models: [{ id: "grok-4.6", cost: { input: 2 } }] } }));
+	const prior = process.env.CRAFT_METRICS_PRICES;
+	try {
+		assert.equal(loadPriceTable(path).get("anthropic/claude-opus-5"), undefined, "argument form");
+		process.env.CRAFT_METRICS_PRICES = path;
+		assert.equal(loadPriceTable().get("anthropic/claude-opus-5"), undefined, "env form");
+	} finally {
+		if (prior === undefined) delete process.env.CRAFT_METRICS_PRICES;
+		else process.env.CRAFT_METRICS_PRICES = prior;
+		cleanup();
+	}
+});
+
+test("the default resolution prices Anthropic models even when the host registry lists none", () => {
+	const prior = process.env.CRAFT_METRICS_PRICES;
+	delete process.env.CRAFT_METRICS_PRICES;
+	try {
+		assert.ok(
+			loadPriceTable().get("anthropic/claude-opus-5"),
+			"a Claude Code phase must price against something — it reports no cost of its own",
+		);
+	} finally {
+		if (prior !== undefined) process.env.CRAFT_METRICS_PRICES = prior;
 	}
 });
 

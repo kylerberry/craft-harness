@@ -33,9 +33,20 @@ for skill in "$repo"/skills/*; do
 done
 
 mkdir -p "$HOME/.local/bin"
-for command in craft-metrics craft-mutate; do
+for command in craft-metrics craft-mutate craft-hook; do
 	link "$repo/tooling/bin/$command.mjs" "$HOME/.local/bin/$command"
 done
+
+# Claude Code agents are generated, not linked: the source files are written in Pi's
+# frontmatter dialect, and two hand-maintained copies of an agent prompt drift.
+# Names are preserved exactly — the phase map, the blinding targets, and the hook's
+# PreToolUse matcher all key on them.
+"$repo/tooling/bin/craft-agents.mjs" "$repo/agents" "$HOME/.claude/agents"
+
+# Register the metrics hooks. Merged into whatever is already in settings.json
+# rather than written over it, and only when this repo's command is not already
+# registered, so re-running is a no-op.
+node "$repo/tooling/bin/craft-hooks-install.mjs" "$HOME/.claude/settings.json"
 
 if ! "$skip_pi"; then
 	if ! command -v pi >/dev/null; then

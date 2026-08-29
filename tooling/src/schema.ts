@@ -12,6 +12,11 @@ export type Kind = "feature" | "bugfix" | "refactor" | "scaffold" | "docs" | "ch
 export type Outcome = "open" | "completed" | "aborted" | "blocked" | "hitl-paused";
 
 export const KINDS: Kind[] = ["feature", "bugfix", "refactor", "scaffold", "docs", "chore"];
+/**
+ * `unknown` is accepted as a correction target on purpose: a run mislabelled `pi`
+ * that cannot be re-identified should be able to say so rather than keep a guess.
+ */
+export const HOSTS: Host[] = ["pi", "claude-code", "unknown"];
 export type PhaseName = "C" | "counsel" | "R" | "A" | "F" | "T" | "S" | "supervisor" | "unattributed";
 
 export const PHASES: PhaseName[] = ["C", "counsel", "R", "A", "F", "T", "S", "supervisor", "unattributed"];

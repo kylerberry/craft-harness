@@ -67,15 +67,22 @@ export default function (pi: ExtensionAPI) {
 
 	function resolveRun(cwd: string): string | undefined {
 		if (runId) return runId;
-		runId = store.latestOpenForCwd(cwd)?.run_id;
+		const run = store.latestOpenForCwd(cwd);
+		if (!run) return undefined;
+		// The adapter observes its host first-hand; `start --host` only repeats what
+		// the conductor typed, and host is now a comparison axis — a run filed under
+		// the wrong harness pollutes that harness's averages rather than merely
+		// carrying a wrong label. A disagreement resolves toward whoever is running.
+		if (run.host !== "pi") store.setHost(run.run_id, "pi");
+		runId = run.run_id;
 		return runId;
 	}
 
 	pi.on("session_start", (_event, ctx) => {
 		safe(() => {
 			reported.clear();
-			runId = store.latestOpenForCwd(ctx.cwd)?.run_id;
-			if (runId) ctx.ui.setStatus("craft-metrics", `craft ${runId.slice(0, 8)}`);
+			runId = undefined;
+			if (resolveRun(ctx.cwd)) ctx.ui.setStatus("craft-metrics", `craft ${runId!.slice(0, 8)}`);
 		});
 	});
 

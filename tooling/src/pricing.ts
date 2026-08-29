@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { PhaseRecord, Run, Tokens } from "./schema.ts";
 
 /**
@@ -31,13 +32,46 @@ export function defaultPriceTablePath(): string {
 }
 
 /**
- * Load pi's model price registry. Missing file, unreadable JSON, or an unexpected
+ * Prices shipped with this repo, currently Anthropic's. Needed because Claude Code
+ * reports no cost at all, and pi's registry lists only the providers pi routes to —
+ * so without a bundled table every Claude Code phase prices at $0 and reads as free
+ * next to a metered pi phase. Same file shape as pi's registry, so one parser serves
+ * both.
+ */
+export function bundledPriceTablePath(): string {
+	return join(dirname(fileURLToPath(import.meta.url)), "prices", "anthropic.json");
+}
+
+/**
+ * The price table as the tool actually resolves it: bundled prices first, then the
+ * host's own registry over the top — a host that knows a model's price beats the one
+ * we shipped for it.
+ *
+ * An explicit path (the `path` argument, or `CRAFT_METRICS_PRICES`) means *that table,
+ * exactly*. Merging the bundle underneath a table someone deliberately pointed us at
+ * would price models they left out on purpose.
+ */
+export function loadPriceTable(path?: string): PriceTable {
+	const override = path ?? process.env.CRAFT_METRICS_PRICES;
+	if (override) return readPriceFile(override);
+	return mergePriceTables(readPriceFile(bundledPriceTablePath()), readPriceFile(defaultPriceTablePath()));
+}
+
+/** `over` wins on collision. Neither input is mutated. */
+export function mergePriceTables(base: PriceTable, over: PriceTable): PriceTable {
+	const merged: PriceTable = new Map(base);
+	for (const [model, price] of over) merged.set(model, price);
+	return merged;
+}
+
+/**
+ * Parse one models-store-shaped file. Missing file, unreadable JSON, or an unexpected
  * shape all return an empty table rather than throwing — pricing is enrichment, not
  * a dependency the rest of the tool should break on. An empty table makes every
  * notional figure fall back to `cost_usd`, which is silently correct: nothing to
  * price against means nothing changes.
  */
-export function loadPriceTable(path: string = process.env.CRAFT_METRICS_PRICES ?? defaultPriceTablePath()): PriceTable {
+function readPriceFile(path: string): PriceTable {
 	const table: PriceTable = new Map();
 	let raw: string;
 	try {

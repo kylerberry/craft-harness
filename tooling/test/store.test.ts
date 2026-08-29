@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Store, diagnose, modelTotals, summarize, phaseTotalsByVersion } from "../src/store.ts";
+import { Store, diagnose, modelTotals, summarize, phaseTotalsByGroup } from "../src/store.ts";
 import { computeSeams } from "../src/schema.ts";
 import type { PriceTable } from "../src/pricing.ts";
 
@@ -797,7 +797,7 @@ test("conflicting version signals refuse to resolve", () => {
 	}
 });
 
-test("phaseTotalsByVersion keeps v3 and v4 counsel apart", () => {
+test("phaseTotalsByGroup keeps v3 and v4 counsel apart", () => {
 	const { store: s, cleanup } = tmpStore();
 	try {
 		const old = s.openRun({ host: "pi", cwd: "/tmp/old", repo: "demo", mode: "full" });
@@ -810,11 +810,76 @@ test("phaseTotalsByVersion keeps v3 and v4 counsel apart", () => {
 		s.recordUsage(fresh.run_id, { cost_usd: 0.25, model: "zai/glm-5.2", turns: 1 });
 		s.exitPhase(fresh.run_id, "counsel", {}, "2026-04-02T00:03:00.000Z");
 
-		const byVersion = phaseTotalsByVersion(s.loadAll());
-		assert.equal(byVersion.get("3")!.get("counsel")!.cost, 1);
-		assert.equal(byVersion.get("3")!.get("counsel")!.ms, 720_000);
-		assert.equal(byVersion.get("4")!.get("counsel")!.cost, 0.25);
-		assert.equal(byVersion.get("4")!.get("counsel")!.ms, 180_000);
+		const groups = phaseTotalsByGroup(s.loadAll());
+		const v3 = groups.find((g) => g.craft_version === "3")!;
+		const v4 = groups.find((g) => g.craft_version === "4")!;
+		assert.equal(v3.totals.get("counsel")!.cost, 1);
+		assert.equal(v3.totals.get("counsel")!.ms, 720_000);
+		assert.equal(v4.totals.get("counsel")!.cost, 0.25);
+		assert.equal(v4.totals.get("counsel")!.ms, 180_000);
+		// Both runs are pi, so the harness axis must not fragment them further.
+		assert.equal(groups.length, 2);
+		assert.equal(v3.inferred, 1, "version was recovered from the agents, not declared");
+	} finally {
+		cleanup();
+	}
+});
+
+test("phaseTotalsByGroup separates the same version on two harnesses", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		for (const [host, cwd, cost] of [
+			["pi", "/tmp/on-pi", 2],
+			["claude-code", "/tmp/on-cc", 0],
+		] as const) {
+			const run = s.openRun({ host, cwd, repo: "demo", mode: "full", craft_version: "4" });
+			s.enterPhase(run.run_id, "R", { agent: "craft-builder", at: "2026-04-02T00:00:00.000Z" });
+			s.recordUsage(run.run_id, { cost_usd: cost, model: "anthropic/claude-opus-5", turns: 1, tokens: { input: 10 } });
+			s.exitPhase(run.run_id, "R", {}, "2026-04-02T00:05:00.000Z");
+		}
+
+		const groups = phaseTotalsByGroup(s.loadAll());
+		assert.equal(groups.length, 2, "same version, two harnesses, two populations");
+		const pi = groups.find((g) => g.host === "pi")!;
+		const cc = groups.find((g) => g.host === "claude-code")!;
+		assert.equal(pi.craft_version, "4");
+		assert.equal(cc.craft_version, "4");
+		assert.equal(pi.totals.get("R")!.cost, 2);
+		// The whole point: Claude Code reports no cost, so blending would have shown
+		// $2 across two runs and made the harness look half price rather than unpriced.
+		assert.equal(cc.totals.get("R")!.cost, 0);
+
+		// The same model on two harnesses is two rows, never one.
+		const rows = modelTotals(s.loadAll()).filter((m) => m.model === "anthropic/claude-opus-5");
+		assert.equal(rows.length, 2);
+		assert.deepEqual(rows.map((r) => r.host).sort(), ["claude-code", "pi"]);
+	} finally {
+		cleanup();
+	}
+});
+
+test("setHost corrects a run that was opened without a harness", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "unknown", cwd: "/tmp/nohost", repo: "demo", mode: "full" });
+		// A later opener that does know the harness fills the gap in place.
+		s.openRun({ host: "claude-code", cwd: "/tmp/nohost", repo: "demo", mode: "full" });
+		assert.equal(s.get(run.run_id)!.host, "claude-code", "unknown is a gap to fill, not a stated value");
+
+		s.setHost(run.run_id, "unknown");
+		assert.ok(
+			diagnose(s.loadAll()).some((c) => c.kind === "unknown-host"),
+			"a run belonging to no harness compares against nothing",
+		);
+
+		s.setHost(run.run_id, "claude-code");
+		assert.equal(s.get(run.run_id)!.host, "claude-code");
+		assert.ok(!diagnose(s.loadAll()).some((c) => c.kind === "unknown-host"));
+
+		// A second opener declaring a different harness does not get to overwrite a
+		// host that is already stated — only `setHost` settles a real disagreement.
+		s.openRun({ host: "pi", cwd: "/tmp/nohost", repo: "demo", mode: "full" });
+		assert.equal(s.get(run.run_id)!.host, "claude-code");
 	} finally {
 		cleanup();
 	}

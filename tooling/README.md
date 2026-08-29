@@ -3,11 +3,11 @@
 Phase-grained collector for CRAFT runs. Skills emit semantics; hosts emit usage. Neither is complete alone.
 
 ```
-skill          →  start / enter / exit / end
-Pi extension   →  turn_end, tool_execution_end, agent_end (residual only)
-Claude Code    →  (later: Stop / PostToolUse hooks)
-                 ↘
-         ~/.local/share/craft-metrics/events.jsonl
+skill                →  start / enter / exit / end
+Pi extension         →  turn_end, tool_execution_end, agent_end (residual only)
+Claude Code hooks    →  PostToolUse / Stop (transcript tail), SubagentStop, PreToolUse
+                       ↘
+               ~/.local/share/craft-metrics/events.jsonl
 ```
 
 ## Attribution
@@ -36,19 +36,54 @@ host that genuinely reports small, late increments.
 `show` prints `(backfilled $N)` on any phase holding guessed cost, and flags runs that
 were started but never gated.
 
+## Reading a Claude Code transcript
+
+Claude Code has no extension API, so the adapter is a set of hooks — each one a
+separate short-lived process — and usage is read out of the session transcript.
+Probing a real session turned up three traps, all of which corrupt quietly rather
+than crashing:
+
+**One response is written as several lines.** A single API response appears once per
+content block (thinking, text, tool_use), sharing a `requestId`, with a `usage` that
+*grows* across them. Deduping on the per-line `uuid` triples the bill; taking the
+first line reported 3 output tokens where the response produced 184. The adapter
+keys on `requestId` and bills the increase.
+
+**A subagent's `tool_response.usage` is only its last message.** In the probe it read
+225 tokens against an actual 441. `SubagentStop` carries `agent_transcript_path` — the
+subagent's own transcript — and that is what gets billed.
+
+**Hooks fired inside a subagent report the parent's `transcript_path`.** So the main
+transcript is flushed only from the main thread; a subagent's spend arrives once, at
+its own stop, marked `subagent`.
+
+Cost is recorded as `$0` because Claude Code reports none. That is honest, and it is
+also why the bundled price table matters: without it a Claude Code phase prices at
+zero and reads as free beside a metered Pi phase. Compare hosts by `notional` or
+tokens, never by `cost`.
+
 ## Install
 
 ```bash
-# CLI
-ln -sf "$(pwd)/bin/craft-metrics.mjs" ~/.local/bin/craft-metrics
+# Everything, on the author's machine
+../bin/link-global
 
-# Pi adapter (auto-loads the extension)
-pi install /absolute/path/to/craft-metrics
+# Or piecemeal
+ln -sf "$(pwd)/bin/craft-metrics.mjs" ~/.local/bin/craft-metrics
+ln -sf "$(pwd)/bin/craft-hook.mjs"    ~/.local/bin/craft-hook
+pi install "$(pwd)"                                    # Pi adapter
+./bin/craft-agents.mjs ../agents ~/.claude/agents      # Claude Code agent files
+./bin/craft-hooks-install.mjs ~/.claude/settings.json  # Claude Code hooks
 ```
+
+Claude Code reads hooks at startup, so an already-running session keeps the old set —
+restart it. `craft-hooks-install` merges into the existing settings, backs the file up
+first, and is a no-op on re-run.
 
 | env | effect |
 |---|---|
-| `CRAFT_METRICS_PATH` | override the event log |
+| `CRAFT_METRICS_PATH` | override the event log (the hook adapter honours it too) |
+| `CRAFT_METRICS_PRICES` | use exactly this price table, instead of bundled + host registry |
 | `CRAFT_METRICS_BACKFILL_MS` | grace window for route 4. Off (`0`) by default |
 
 ## Skill contract
@@ -109,6 +144,26 @@ bill no separate write. Only Anthropic reports that split.
 
 Seams (`counsel≠C`, `A≠R`, `T≠R`) are computed from actual models, not prompts.
 
+Prices come from the bundled table (`src/prices/anthropic.json`) with the host's own
+registry merged over the top — Pi's registry knows the models Pi routes to, and
+nothing on the machine knows Anthropic's. `CRAFT_METRICS_PRICES` replaces both.
+
+## Two harnesses, two populations
+
+`host` is not a label, it is an axis. `totals` splits by workflow version **and**
+harness, and `models` reports one row per host per model — the same model runs under
+both, so merging on the model id alone averages two harnesses into one number.
+
+The split is not cosmetic. Turning it on immediately surfaced a Claude Code run that
+had been sitting inside the Pi averages with zero recorded usage, quietly dragging
+every per-phase figure down.
+
+`doctor` reports `unknown-host` for a run that names no harness: it sits in its own
+bucket and compares against nothing. `craft-metrics host --run ID --host claude-code`
+fixes one after the fact — and both adapters correct it on sight, because an adapter
+observes its host first-hand while `start --host` only repeats what the conductor
+typed.
+
 ## Doctor
 
 Silent collection bugs are the main risk here — the numbers stay plausible while
@@ -121,3 +176,4 @@ being wrong. `doctor` reports:
   cost incomparable across runs. Subscription-billed models (Codex) do this; compare
   tokens instead
 - **unattributed** — share of total spend that landed outside any phase
+- **unknown-host** — a run that names no harness, so it compares against nothing

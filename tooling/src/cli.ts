@@ -9,10 +9,10 @@ import {
 	modelTotals,
 	summarize,
 	phaseTotals,
-	phaseTotalsByVersion,
+	phaseTotalsByGroup,
 	type PhaseTotal,
 } from "./store.ts";
-import { KINDS, PHASES, type Host, type Kind, type Mode, type Outcome, type PhaseName } from "./schema.ts";
+import { HOSTS, KINDS, PHASES, type Host, type Kind, type Mode, type Outcome, type PhaseName } from "./schema.ts";
 import type { PriceTable } from "./pricing.ts";
 
 /**
@@ -72,6 +72,7 @@ Usage:
   craft-metrics resume --run ID
   craft-metrics mode   --run ID --mode MODE
   craft-metrics kind   --run ID --kind KIND
+  craft-metrics host   --run ID --host pi|claude-code|unknown
   craft-metrics end    --run ID [--outcome completed|aborted|blocked|hitl-paused]
   craft-metrics current [--cwd PATH]
   craft-metrics show    [--run ID] [--last N]
@@ -126,6 +127,12 @@ function parseKind(argv: string[], io: Io): Kind {
 	return k as Kind;
 }
 
+function parseHost(argv: string[], io: Io): Host {
+	const h = requireArg("--host", argv, io);
+	if (!HOSTS.includes(h as Host)) fail(io, `invalid --host ${h} (use ${HOSTS.join("|")})`);
+	return h as Host;
+}
+
 function parseMode(argv: string[], io: Io): Mode {
 	const m = requireArg("--mode", argv, io);
 	if (m !== "full" && m !== "hitl" && m !== "lite" && m !== "dag") {
@@ -147,7 +154,9 @@ export function main(argv: string[], io: Io = defaultIo): number {
 		case "start": {
 			const run = store.openRun({
 				run_id: arg("--run", rest),
-				host: (arg("--host", rest) as Host | undefined) ?? "unknown",
+				// Validated, not cast: host now decides which population a run is
+				// compared within, so a typo would quietly open a third harness.
+				host: has("--host", rest) ? parseHost(rest, io) : "unknown",
 				cwd: arg("--cwd", rest) ?? io.cwd(),
 				repo: arg("--repo", rest) ?? basename(arg("--cwd", rest) ?? io.cwd()),
 				mode: parseMode(rest, io),
@@ -230,6 +239,9 @@ export function main(argv: string[], io: Io = defaultIo): number {
 		case "kind":
 			store.setKind(requireArg("--run", rest, io), parseKind(rest, io));
 			return 0;
+		case "host":
+			store.setHost(requireArg("--run", rest, io), parseHost(rest, io));
+			return 0;
 		case "end": {
 			const outcome = (arg("--outcome", rest) as Outcome | undefined) ?? "completed";
 			store.endRun(requireArg("--run", rest, io), outcome);
@@ -299,27 +311,27 @@ export function main(argv: string[], io: Io = defaultIo): number {
 					);
 				}
 			};
-			// Split by default. A blended table averages workflows that differ in shape
-			// — v3's three-agent counsel panel against v4's single reviewer — and reads
-			// as one coherent number when it is not. `--all` opts back into the blend.
+			// Split by default. A blended table averages populations that differ in
+			// shape — v3's three-agent counsel panel against v4's single reviewer, or
+			// Pi's routing against Claude Code's — and reads as one coherent number
+			// when it is not. `--all` opts back into the blend.
 			if (has("--all", rest)) {
 				writeTable(phaseTotals(runs));
 			} else {
-				const byVersion = phaseTotalsByVersion(runs);
-				for (const [version, totals] of byVersion) {
-					const n = runs.filter((r) => (r.craft_version ?? "unknown") === version).length;
-					const inferred = runs.filter(
-						(r) => (r.craft_version ?? "unknown") === version && r.craft_version_source === "inferred",
-					).length;
-					const mark = inferred > 0 ? ` (${inferred} inferred)` : "";
-					io.write(`\n── CRAFTS v${version} — ${n} run${n === 1 ? "" : "s"}${mark}\n`);
-					writeTable(totals);
+				for (const g of phaseTotalsByGroup(runs)) {
+					const mark = g.inferred > 0 ? ` (${g.inferred} inferred)` : "";
+					// "vunknown" reads as a version number; an unclassified run has none.
+					const label = g.craft_version === "unknown" ? "CRAFTS version unknown" : `CRAFTS v${g.craft_version}`;
+					io.write(`\n── ${label} · ${g.host} — ${g.n} run${g.n === 1 ? "" : "s"}${mark}\n`);
+					writeTable(g.totals);
 				}
 			}
 			io.write(
 				"\n`cost` is what you paid; `notional` is what the tokens are worth at list price\n" +
 					"(fills in $0 subscription phases). Compare phases by notional, not cost.\n" +
-					"Split by workflow version — phases changed shape between versions. `--all` blends.\n",
+					"Split by workflow version and harness — phases changed shape between versions,\n" +
+					"and Claude Code reports no cost at all, so a cost column would read as free.\n" +
+					"Compare across hosts by notional or tokens only. `--all` blends everything.\n",
 			);
 			return 0;
 		}
@@ -330,13 +342,13 @@ export function main(argv: string[], io: Io = defaultIo): number {
 				return 0;
 			}
 			io.write(
-				"model                          turns      cost   notional      in     out   cache\n",
+				"model                          host         turns      cost   notional      in     out   cache\n",
 			);
 			for (const m of rows) {
 				const cost = m.costless ? "     n/a" : `$${m.cost.toFixed(2).padStart(7)}`;
 				const notional = m.unpriced ? "   unpriced" : `  $${m.notional.toFixed(2).padStart(8)}`;
 				io.write(
-					`${m.model.padEnd(29)} ${String(m.turns).padStart(5)}  ${cost}${notional}  ${mtok(m.tokens.input)}  ${mtok(m.tokens.output)}  ${mtok(m.tokens.cacheRead)}\n`,
+					`${m.model.padEnd(29)} ${m.host.padEnd(11)} ${String(m.turns).padStart(5)}  ${cost}${notional}  ${mtok(m.tokens.input)}  ${mtok(m.tokens.output)}  ${mtok(m.tokens.cacheRead)}\n`,
 				);
 			}
 			if (rows.some((m) => m.costless)) {

@@ -43,7 +43,9 @@ agents/
 ├── craft-security-review.md  # T — Tighten final-diff review (P0 gate)
 └── node-conductor.md         # Conducts one DAG node through a CRAFTS protocol
 
-tooling/                      # Metrics, mutation tooling, storage, and Pi adapter
+tooling/                      # Metrics, mutation tooling, storage
+├── extensions/pi.ts          # Pi host adapter
+├── extensions/claude-code.ts # Claude Code host adapter (hooks)
 └── package.json
 
 bin/link-global               # Author-machine live install
@@ -138,6 +140,8 @@ The canonical daily-development setup uses symlinks, so global agents, skills, c
 
 Pass `--skip-pi` when Pi is not installed or its extension is configured separately. Edits through these links change this repository; commit here.
 
+Claude Code is the exception to "everything is a symlink". Its agent files are **generated** from `agents/*.md` into `~/.claude/agents/`, because the source files are written in Pi's frontmatter dialect (lowercase tool names, `input_schema`) — and two hand-maintained copies of an agent prompt drift, invisibly, until a reviewer behaves differently on one host than the other. `link-global` also registers the metrics hooks in `~/.claude/settings.json`, merging into whatever is already there and backing the file up first. Claude Code reads hooks at startup, so restart any open session.
+
 ### Manual/project install
 
 Copy the skills and agents into a project's `.agents/` folder:
@@ -147,7 +151,7 @@ cp -R skills/* /path/to/project/.agents/skills/
 cp -R agents/* /path/to/project/.agents/agents/
 ```
 
-The metrics and mutation commands live in `tooling/`; its Pi adapter is installed with `pi install /path/to/crafts/tooling`. Invoke `/craft`, `/craft-hitl`, or `/craft-lite`. `/execute-dag` requires a subagent runtime with scripted orchestration (Pi's `workflowScript`/`runs.run`).
+The metrics and mutation commands live in `tooling/`, along with both host adapters: the Pi extension is installed with `pi install /path/to/crafts/tooling`, and the Claude Code adapter is a set of hooks registered with `tooling/bin/craft-hooks-install.mjs ~/.claude/settings.json`. Invoke `/craft`, `/craft-hitl`, or `/craft-lite`. `/execute-dag` requires a subagent runtime with scripted orchestration (Pi's `workflowScript`/`runs.run`).
 
 ## Model routing
 

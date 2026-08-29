@@ -109,6 +109,14 @@ type LogEvent =
 	| { v: 1; t: "verify"; run_id: string; at: string; command: string; exit_code: number; phase: PhaseName | null }
 	| { v: 1; t: "mode"; run_id: string; at: string; mode: Mode }
 	| { v: 1; t: "kind"; run_id: string; at: string; kind: Kind }
+	/**
+	 * Which harness ran this. Correctable after the fact because `openRun` returns an
+	 * existing run without applying `opts.host`, and the CLI defaults a missing
+	 * `--host` to `unknown` — so a conductor that forgets the flag would otherwise
+	 * mislabel the run permanently. The adapter *is* the host; the skill only claims
+	 * to know which one it is.
+	 */
+	| { v: 1; t: "host"; run_id: string; at: string; host: Host }
 	| {
 			v: 1;
 			t: "craft_version";
@@ -270,6 +278,13 @@ export class Store {
 			if (opts.craft_version && existing.craft_version_source !== "declared") {
 				this.setCraftVersion(existing.run_id, opts.craft_version, "declared", opts.at);
 			}
+			// Fill in a missing harness, never overwrite a stated one. Whoever opened
+			// the run first is more likely to have known: an adapter *is* its host,
+			// while a later `start` only repeats whatever flag the conductor typed. A
+			// genuine disagreement is left standing for `setHost` to settle explicitly.
+			if (opts.host !== "unknown" && existing.host === "unknown") {
+				this.setHost(existing.run_id, opts.host, opts.at);
+			}
 			return this.get(existing.run_id) ?? existing;
 		}
 		const run_id = opts.run_id ?? randomUUID();
@@ -387,6 +402,22 @@ export class Store {
 			run_id: runId,
 			at: nowIso(),
 			mode,
+		});
+		return this.get(runId) ?? this.missing(runId);
+	}
+
+	/**
+	 * Correct which harness a run belongs to. Host is a comparison axis — `totals`
+	 * and `models` split on it — so a run labelled `unknown` is a run that cannot be
+	 * compared against anything.
+	 */
+	setHost(runId: string, host: Host, at?: string): Run {
+		this.append({
+			v: SCHEMA_VERSION,
+			t: "host",
+			run_id: runId,
+			at: at ?? nowIso(),
+			host,
 		});
 		return this.get(runId) ?? this.missing(runId);
 	}
@@ -544,6 +575,11 @@ function fold(byId: Map<string, Run>, ev: LogEvent, finalMode?: Map<string, Mode
 			return;
 		case "kind":
 			run.kind = ev.kind;
+			return;
+		// Last write wins. Unlike `mode`, host does not route usage anywhere, so a
+		// correction needs no pre-resolution pass to move cost already folded.
+		case "host":
+			run.host = ev.host;
 			return;
 		case "craft_version":
 			run.craft_version = ev.craft_version;
@@ -738,7 +774,14 @@ export function fmtSeam(v: boolean | null): string {
 }
 
 export interface Complaint {
-	kind: "ungated" | "stale-open" | "costless-model" | "unattributed" | "unverified-pass" | "fix-without-findings";
+	kind:
+		| "ungated"
+		| "stale-open"
+		| "costless-model"
+		| "unattributed"
+		| "unverified-pass"
+		| "fix-without-findings"
+		| "unknown-host";
 	run_id?: string;
 	detail: string;
 	cost_usd: number;
@@ -766,6 +809,17 @@ export function diagnose(runs: Run[], now = Date.now(), staleHours = 12): Compla
 				kind: "ungated",
 				run_id: run.run_id,
 				detail: `${run.repo ?? run.cwd}: started ${run.started_at}, no phase ever entered`,
+				cost_usd: runCost,
+			});
+		}
+		// Host is a comparison axis, so a run that names no harness is not merely
+		// unlabelled — it sits in its own `unknown` bucket and compares against
+		// nothing. `craft-metrics host --run ID --host …` fixes it after the fact.
+		if (run.host === "unknown") {
+			out.push({
+				kind: "unknown-host",
+				run_id: run.run_id,
+				detail: `${run.repo ?? run.cwd}: no harness recorded — cannot be compared against pi or claude-code`,
 				cost_usd: runCost,
 			});
 		}
@@ -855,24 +909,46 @@ export interface PhaseTotal {
 	tokens: Tokens;
 }
 
+/** One comparable population: a single workflow revision on a single harness. */
+export interface PhaseGroup {
+	craft_version: string;
+	host: Host;
+	n: number;
+	/** How many of `n` had their version recovered by the classifier rather than declared. */
+	inferred: number;
+	totals: Map<PhaseName, PhaseTotal>;
+}
+
 /**
- * Phase totals split by workflow revision. Averaging a phase across versions
- * describes a workflow that never existed — the counsel phase, for instance, was a
- * three-agent panel in v3 and one reviewer in v4, and a blended figure is neither.
+ * Phase totals split by workflow revision *and* harness — the two things that change
+ * what a phase number means without changing its name.
+ *
+ * Version, because averaging a phase across revisions describes a workflow that never
+ * existed: counsel was a three-agent panel in v3 and one reviewer in v4, and a blended
+ * figure is neither. Host, for the same reason one level down — the same phase on Pi and
+ * on Claude Code runs different models under different routing, and only one of the two
+ * reports a price at all. Blending them produces a figure describing no setup that exists.
  */
-export function phaseTotalsByVersion(runs: Run[]): Map<string, Map<PhaseName, PhaseTotal>> {
-	const byVersion = new Map<string, Run[]>();
+export function phaseTotalsByGroup(runs: Run[]): PhaseGroup[] {
+	const groups = new Map<string, Run[]>();
 	for (const run of runs) {
-		const key = run.craft_version ?? "unknown";
-		const list = byVersion.get(key) ?? [];
+		const key = `${run.craft_version ?? "unknown"} ${run.host}`;
+		const list = groups.get(key) ?? [];
 		list.push(run);
-		byVersion.set(key, list);
+		groups.set(key, list);
 	}
-	const out = new Map<string, Map<PhaseName, PhaseTotal>>();
-	for (const [version, list] of [...byVersion.entries()].sort((a, b) => b[0].localeCompare(a[0]))) {
-		out.set(version, phaseTotals(list));
-	}
-	return out;
+	return [...groups.entries()]
+		.sort((a, b) => b[0].localeCompare(a[0]))
+		.map(([key, list]) => {
+			const [craft_version, host] = key.split(" ") as [string, Host];
+			return {
+				craft_version,
+				host,
+				n: list.length,
+				inferred: list.filter((r) => r.craft_version_source === "inferred").length,
+				totals: phaseTotals(list),
+			};
+		});
 }
 
 export function phaseTotals(runs: Run[]): Map<PhaseName, PhaseTotal> {
@@ -899,6 +975,12 @@ export function phaseTotals(runs: Run[]): Map<PhaseName, PhaseTotal> {
  */
 export interface ModelTotal {
 	model: string;
+	/**
+	 * Which harness burned these tokens. Not derivable from `model`: both hosts can
+	 * route the same model — Pi routes `anthropic/claude-opus-5` too — so merging on
+	 * model alone silently averages two harnesses into one row.
+	 */
+	host: Host;
 	provider?: string;
 	events: number;
 	turns: number;
@@ -917,8 +999,10 @@ export function modelTotals(runs: Run[]): ModelTotal[] {
 	for (const run of runs) {
 		for (const p of run.phases) {
 			for (const [model, spend] of Object.entries(p.by_model)) {
-				const cur = map.get(model) ?? {
+				const key = `${run.host} ${model}`;
+				const cur = map.get(key) ?? {
 					model,
+					host: run.host,
 					provider: spend.provider,
 					events: 0,
 					turns: 0,
@@ -933,7 +1017,7 @@ export function modelTotals(runs: Run[]): ModelTotal[] {
 				cur.cost += spend.cost_usd;
 				cur.notional += spend.notional_cost_usd ?? spend.cost_usd;
 				addTokens(cur.tokens, spend.tokens);
-				map.set(model, cur);
+				map.set(key, cur);
 			}
 		}
 	}

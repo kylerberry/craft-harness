@@ -108,6 +108,9 @@ test("an invalid kind, mode, or phase exits 2 with a specific message", () => {
 		[["enter", "--run", "x", "--phase", "wat"], /invalid --phase wat/],
 		// Derived buckets are not gates a caller may enter.
 		[["enter", "--run", "x", "--phase", "unattributed"], /invalid --phase unattributed/],
+		// Host decides which population a run is compared within, so a near-miss
+		// spelling must fail rather than quietly open a third harness.
+		[["start", "--kind", "feature", "--mode", "full", "--host", "claude"], /invalid --host claude/],
 	];
 	for (const [argv, expected] of cases) {
 		const h = harness();
@@ -319,6 +322,39 @@ test("totals splits by workflow version and labels inferred ones", () => {
 		assert.match(text, /CRAFTS v3/);
 		assert.match(text, /1 inferred/);
 		assert.match(text, /Compare phases by notional, not cost/);
+	} finally {
+		h.cleanup();
+	}
+});
+
+test("totals headings name the harness, and host corrects a mislabelled run", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "feature", "--mode", "full", "--craft-version", "4"], h.io);
+		const id = h.out().trim();
+		main(["enter", "--run", id, "--phase", "R", "--agent", "craft-builder"], h.io);
+		main(["totals"], h.io);
+		assert.match(h.out(), /CRAFTS v4 · unknown/, "a run with no declared host says so");
+
+		assert.equal(main(["host", "--run", id, "--host", "claude-code"], h.io), 0);
+		assert.equal(h.events().find((e) => e.t === "host").host, "claude-code");
+		main(["totals"], h.io);
+		assert.match(h.out(), /CRAFTS v4 · claude-code/);
+		assert.match(h.out(), /Compare across hosts by notional or tokens only/);
+	} finally {
+		h.cleanup();
+	}
+});
+
+test("doctor names a run that belongs to no harness", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "feature", "--mode", "full"], h.io);
+		const id = h.out().trim();
+		main(["enter", "--run", id, "--phase", "R"], h.io);
+		assert.equal(main(["doctor"], h.io), 1);
+		assert.match(h.out(), /unknown-host/);
+		assert.match(h.out(), /cannot be compared against pi or claude-code/);
 	} finally {
 		h.cleanup();
 	}
