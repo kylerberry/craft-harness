@@ -109,7 +109,19 @@ type LogEvent =
 	| { v: 1; t: "verify"; run_id: string; at: string; command: string; exit_code: number; phase: PhaseName | null }
 	| { v: 1; t: "mode"; run_id: string; at: string; mode: Mode }
 	| { v: 1; t: "kind"; run_id: string; at: string; kind: Kind }
-	| { v: 1; t: "craft_version"; run_id: string; at: string; craft_version: string }
+	| {
+			v: 1;
+			t: "craft_version";
+			run_id: string;
+			at: string;
+			craft_version: string;
+			/**
+			 * How the version was arrived at. Persisting an inference without this
+			 * would launder a guess into a declaration — the tilde in `show` and the
+			 * "(n inferred)" in `totals` both depend on the distinction surviving.
+			 */
+			source?: "declared" | "inferred";
+	  }
 	| { v: 1; t: "run_end"; run_id: string; at: string; outcome: Outcome };
 
 export class Store {
@@ -256,7 +268,7 @@ export class Store {
 			// `existing` has already been through the classifier, so an inferred value
 			// would otherwise look like a declaration and block the real one.
 			if (opts.craft_version && existing.craft_version_source !== "declared") {
-				this.setCraftVersion(existing.run_id, opts.craft_version, opts.at);
+				this.setCraftVersion(existing.run_id, opts.craft_version, "declared", opts.at);
 			}
 			return this.get(existing.run_id) ?? existing;
 		}
@@ -390,13 +402,19 @@ export class Store {
 		return this.get(runId) ?? this.missing(runId);
 	}
 
-	setCraftVersion(runId: string, craft_version: string, at?: string): Run {
+	setCraftVersion(
+		runId: string,
+		craft_version: string,
+		source: "declared" | "inferred" = "declared",
+		at?: string,
+	): Run {
 		this.append({
 			v: SCHEMA_VERSION,
 			t: "craft_version",
 			run_id: runId,
 			at: at ?? nowIso(),
 			craft_version,
+			source,
 		});
 		return this.get(runId) ?? this.missing(runId);
 	}
@@ -449,6 +467,7 @@ function fold(byId: Map<string, Run>, ev: LogEvent, finalMode?: Map<string, Mode
 			mode: finalMode?.get(ev.run_id) ?? ev.mode,
 			kind: ev.kind,
 			craft_version: ev.craft_version,
+			craft_version_source: ev.craft_version ? "declared" : undefined,
 			outcome: "open",
 			open_phase: null,
 			phase_entries: 0,
@@ -528,6 +547,7 @@ function fold(byId: Map<string, Run>, ev: LogEvent, finalMode?: Map<string, Mode
 			return;
 		case "craft_version":
 			run.craft_version = ev.craft_version;
+			run.craft_version_source = ev.source ?? "declared";
 			return;
 		case "run_end":
 			if (run.open_phase) closePhase(run, run.open_phase, ev.at);

@@ -508,3 +508,46 @@ test("show --last keeps only the most recent runs", () => {
 		h.cleanup();
 	}
 });
+
+test("pin-versions writes nothing without --apply", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "feature", "--mode", "full"], h.io);
+		const id = h.out().trim();
+		main(["enter", "--run", id, "--phase", "counsel", "--agent", "craft-plan-scope"], h.io);
+		assert.equal(main(["pin-versions"], h.io), 0);
+		assert.match(h.out(), /would be pinned/);
+		assert.equal(h.events().filter((e) => e.t === "craft_version").length, 0, "a dry run must not write");
+	} finally {
+		h.cleanup();
+	}
+});
+
+test("pin-versions --apply persists the inference with its provenance", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "feature", "--mode", "full"], h.io);
+		const id = h.out().trim();
+		main(["enter", "--run", id, "--phase", "counsel", "--agent", "craft-plan-scope"], h.io);
+		assert.equal(main(["pin-versions", "--apply"], h.io), 0);
+		const ev = h.events().filter((e) => e.t === "craft_version");
+		assert.equal(ev.length, 1);
+		assert.equal(ev[0].craft_version, "3");
+		assert.equal(ev[0].source, "inferred");
+		assert.match(h.out(), /still marked inferred, not declared/);
+	} finally {
+		h.cleanup();
+	}
+});
+
+test("pin-versions leaves declared runs alone and says so when there is nothing to do", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "feature", "--mode", "full", "--craft-version", "4"], h.io);
+		assert.equal(main(["pin-versions", "--apply"], h.io), 0);
+		assert.match(h.out(), /nothing to pin/);
+		assert.equal(h.events().filter((e) => e.t === "craft_version").length, 0);
+	} finally {
+		h.cleanup();
+	}
+});

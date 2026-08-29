@@ -78,6 +78,7 @@ Usage:
   craft-metrics totals
   craft-metrics models                     per-model turns and tokens
   craft-metrics doctor  [--stale-hours N]   report data-quality problems
+  craft-metrics pin-versions [--apply]      persist inferred workflow versions
 
 Env: CRAFT_METRICS_PATH        override store (default ~/.local/share/craft-metrics/events.jsonl)
      CRAFT_METRICS_BACKFILL_MS attribute late usage to the phase that just closed,
@@ -248,6 +249,29 @@ export function main(argv: string[], io: Io = defaultIo): number {
 			if (id) runs = runs.filter((r) => r.run_id === id || r.run_id.startsWith(id));
 			if (last) runs = runs.slice(-last);
 			io.write(summarize(runs) + "\n");
+			return 0;
+		}
+		case "pin-versions": {
+			// Inference is recomputed on every read, so a classifier change silently
+			// re-dates historical runs. Pinning freezes what the classifier concluded
+			// today. The stored event keeps `source: inferred`, so a pinned guess is
+			// never mistaken for something the skill declared.
+			const runs = store.loadAll();
+			const target = runs.filter((r) => r.craft_version && r.craft_version_source === "inferred");
+			if (target.length === 0) {
+				io.write("nothing to pin — no run carries an inferred version\n");
+				return 0;
+			}
+			const apply = has("--apply", rest);
+			for (const r of target) {
+				io.write(`${r.run_id.slice(0, 8)}  v${r.craft_version}  ${r.repo ?? r.cwd}\n`);
+				if (apply) store.setCraftVersion(r.run_id, r.craft_version!, "inferred");
+			}
+			io.write(
+				apply
+					? `\npinned ${target.length} run${target.length === 1 ? "" : "s"} — still marked inferred, not declared\n`
+					: `\n${target.length} run${target.length === 1 ? "" : "s"} would be pinned. Re-run with --apply to write.\n`,
+			);
 			return 0;
 		}
 		case "doctor": {

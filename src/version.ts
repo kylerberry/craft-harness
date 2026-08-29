@@ -84,8 +84,16 @@ export function resolveCraftVersion(run: Run): { version: string | undefined; so
 	return { version: undefined, source: "unknown" };
 }
 
-/** Annotate a folded run in place, so callers can group without re-deriving. */
+/**
+ * Annotate a folded run in place, so callers can group without re-deriving.
+ *
+ * A version already recorded in the log wins — whether the skill declared it or
+ * an earlier inference was persisted. Re-inferring over a persisted value would
+ * make the stored record pointless and could silently disagree with it after a
+ * classifier change, which is the opposite of why it was stored.
+ */
 export function applyCraftVersion(run: Run): void {
+	if (run.craft_version_source) return;
 	const { version, source } = resolveCraftVersion(run);
 	run.craft_version = version;
 	run.craft_version_source = source;

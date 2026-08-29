@@ -974,3 +974,59 @@ test("the lite guard reads the corrected mode, not the one at open", () => {
 		cleanup();
 	}
 });
+
+test("a persisted inference stays marked inferred, not laundered into a declaration", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/pin", repo: "pin", mode: "full" });
+		s.enterPhase(run.run_id, "counsel", { agent: "craft-plan-scope" });
+		const before = s.get(run.run_id)!;
+		assert.equal(before.craft_version, "3");
+		assert.equal(before.craft_version_source, "inferred");
+
+		s.setCraftVersion(run.run_id, "3", "inferred");
+		const after = s.get(run.run_id)!;
+		assert.equal(after.craft_version, "3");
+		assert.equal(after.craft_version_source, "inferred", "pinning must not promote a guess");
+	} finally {
+		cleanup();
+	}
+});
+
+test("a pinned version survives a classifier that would now conclude otherwise", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/frozen", repo: "frozen", mode: "full" });
+		s.setCraftVersion(run.run_id, "3", "inferred");
+		// Later evidence that inference alone would read as v4. The pin is what the
+		// classifier concluded at the time, and freezing it is the entire point.
+		s.enterPhase(run.run_id, "counsel", { agent: "craft-counsel" });
+		assert.equal(s.get(run.run_id)!.craft_version, "3");
+	} finally {
+		cleanup();
+	}
+});
+
+test("a real declaration still overrides a pinned inference", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/over", repo: "over", mode: "full" });
+		s.setCraftVersion(run.run_id, "3", "inferred");
+		s.openRun({ host: "pi", cwd: "/tmp/over", repo: "over", mode: "full", craft_version: "4" });
+		const after = s.get(run.run_id)!;
+		assert.equal(after.craft_version, "4", "the skill knows better than the classifier");
+		assert.equal(after.craft_version_source, "declared");
+	} finally {
+		cleanup();
+	}
+});
+
+test("a version declared at open is recorded as declared, not inferred", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/dec", repo: "dec", mode: "full", craft_version: "4" });
+		assert.equal(s.get(run.run_id)!.craft_version_source, "declared");
+	} finally {
+		cleanup();
+	}
+});
