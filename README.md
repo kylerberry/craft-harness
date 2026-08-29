@@ -1,6 +1,6 @@
-# Agent Utilities
+# CRAFTS
 
-A distributable CRAFTS toolkit for AI coding agents. It mirrors the current global `~/.agents` CRAFTS workflow and its role agents, including bundled security review guidance — plus a DAG layer (`/decompose-to-dag`, `/execute-dag`, and the `node-conductor` agent) that slices multi-node work into supervised CRAFTS runs.
+A personal-first, distributable CRAFTS toolkit for AI coding agents. It mirrors the current global `~/.agents` CRAFTS workflow and its role agents, including bundled security review guidance — plus a DAG layer (`/decompose-to-dag`, `/execute-dag`, and the `node-conductor` agent) that slices multi-node work into supervised CRAFTS runs.
 
 ```mermaid
 flowchart LR
@@ -42,6 +42,11 @@ agents/
 ├── craft-evaluator.md        # A — Assess
 ├── craft-security-review.md  # T — Tighten final-diff review (P0 gate)
 └── node-conductor.md         # Conducts one DAG node through a CRAFTS protocol
+
+tooling/                      # Metrics, mutation tooling, storage, and Pi adapter
+└── package.json
+
+bin/link-global               # Author-machine live install
 ```
 
 ## CRAFTS at a glance
@@ -123,30 +128,26 @@ The `node-conductor` agent conducts exactly one DAG node end-to-end. It loads th
 
 ## Installation
 
-Copy the directories into either a project's `.agents/` folder or your global `~/.agents/` folder:
+### Author-machine live install
+
+The canonical daily-development setup uses symlinks, so global agents, skills, commands, and the Pi extension all resolve to this checkout:
 
 ```bash
-# From this repository
+~/Projects/crafts/bin/link-global
+```
+
+Pass `--skip-pi` when Pi is not installed or its extension is configured separately. Edits through these links change this repository; commit here.
+
+### Manual/project install
+
+Copy the skills and agents into a project's `.agents/` folder:
+
+```bash
 cp -R skills/* /path/to/project/.agents/skills/
 cp -R agents/* /path/to/project/.agents/agents/
 ```
 
-Then invoke `/craft`, `/craft-hitl`, or `/craft-lite`. Ensure the host supports the agent frontmatter and bundled security-review guidance; `/execute-dag` additionally requires a subagent runtime with scripted orchestration (pi's `workflowScript`/`runs.run`).
-
-### Author-machine live install (symlinks)
-
-On the author's machine, the listed entries under `~/.agents` point at this repository so the global workflow always matches git — one copy, no sync step:
-
-```bash
-for f in craft-builder craft-code-simplifier craft-counsel craft-evaluator craft-planner craft-security-review node-conductor; do
-  ln -sf ~/Projects/agent-utilities/agents/$f.md ~/.agents/agents/$f.md
-done
-for skill in craft craft-hitl craft-lite guided-tour decompose-to-dag execute-dag; do
-  ln -sfn ~/Projects/agent-utilities/skills/$skill ~/.agents/skills/$skill
-done
-```
-
-Edits through these links change the repository files; commit from this repository.
+The metrics and mutation commands live in `tooling/`; its Pi adapter is installed with `pi install /path/to/crafts/tooling`. Invoke `/craft`, `/craft-hitl`, or `/craft-lite`. `/execute-dag` requires a subagent runtime with scripted orchestration (Pi's `workflowScript`/`runs.run`).
 
 ## Model routing
 

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Link this checkout into the author's global AI-agent environment.
+set -euo pipefail
+
+repo="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+skip_pi=false
+
+if [[ "${1:-}" == "--skip-pi" ]]; then
+	skip_pi=true
+elif [[ $# -gt 0 ]]; then
+	echo "usage: $(basename "$0") [--skip-pi]" >&2
+	exit 2
+fi
+
+link() {
+	local source="$1" destination="$2"
+	mkdir -p "$(dirname "$destination")"
+	if [[ -e "$destination" && ! -L "$destination" ]]; then
+		echo "refusing to replace non-symlink: $destination" >&2
+		exit 1
+	fi
+	[[ -L "$destination" ]] && rm "$destination"
+	ln -s "$source" "$destination"
+}
+
+for agent in "$repo"/agents/*.md; do
+	link "$agent" "$HOME/.agents/agents/$(basename "$agent")"
+done
+
+for skill in "$repo"/skills/*; do
+	[[ -d "$skill" ]] || continue
+	link "$skill" "$HOME/.agents/skills/$(basename "$skill")"
+done
+
+mkdir -p "$HOME/.local/bin"
+for command in craft-metrics craft-mutate; do
+	link "$repo/tooling/bin/$command.mjs" "$HOME/.local/bin/$command"
+done
+
+if ! "$skip_pi"; then
+	if ! command -v pi >/dev/null; then
+		echo "pi is not installed; skipped Pi extension setup" >&2
+		exit 0
+	fi
+	# Replace the pre-consolidation local package if it is installed.
+	pi remove "$HOME/Projects/craft-tooling" >/dev/null 2>&1 || true
+	pi install "$repo/tooling"
+fi
+
+echo "CRAFTS linked from $repo"

@@ -16,7 +16,7 @@ decision can be resumed without re-deriving it.
 
 **Status:** open risk, no enforcement possible
 
-Run versioning is built (see `craft-tooling/README.md`). What is *not* solved: the bump
+Run versioning is built (see `tooling/README.md`). What is *not* solved: the bump
 itself is a judgment call, and nothing can check it. The rule is "bump when a phase's
 shape changes — agents added or removed, duties moved, gates introduced; not for
 wording." Miss one and v4 quietly becomes two different workflows sharing a label, which
@@ -46,7 +46,7 @@ silently ~$0 for subscription models (Codex on a ChatGPT plan burns real tokens 
 marginal cost), so any phase running mostly on a subscription model looked artificially
 cheap. `craft-metrics` now also computes **notional cost** — tokens priced at list rate
 regardless of billing — which is the only figure comparable across phases. Numbers below
-are notional; see `craft-tooling/README.md` for how it's derived and its known caveats.
+are notional; see `tooling/README.md` for how it's derived and its known caveats.
 
 | phase | notional $ | share | min/invoke |
 | --- | --- | --- | --- |
@@ -142,7 +142,7 @@ that, the change buys flexibility but not the evaluation it is meant to enable.
 
 **Status:** known limitation · low priority
 
-Notional pricing is built (see `craft-tooling/README.md`). One gap remains: some Codex
+Notional pricing is built (see `tooling/README.md`). One gap remains: some Codex
 models (`sol`, `terra`) charge a higher rate above a per-request context threshold
 (`tiers: [{ inputTokensAbove: 272000, ... }]`). Tokens are summed across every request in
 a phase, so which individual requests crossed the threshold is not reconstructable from
@@ -342,7 +342,7 @@ replacing one, and the conditional in `craft-evaluator.md` is not landing.
 Two reasons the answer will be slow to arrive:
 
 - **Adoption is per-repo.** Mutation runs only where a `stryker.config.json` exists, which
-  today is `craft-tooling` and nothing else. Everywhere else Render gains one skipped call
+  today is `tooling` and nothing else. Everywhere else Render gains one skipped call
   and A takes the reading path. The skip branch is the norm, not the exception.
 - **The comparison baseline is v3.** The 20.8-turn figure comes from runs that predate
   every change made since. A's duties narrowed at the same time mutation arrived, so a
@@ -357,7 +357,7 @@ response to a survivor, that fix is verified but not re-mutated.
 
 **Status:** known gap · smallest of the remaining ones
 
-54.4% mutation score, the lowest in `craft-tooling`, on the code that enforces reviewer
+54.4% mutation score, the lowest in `tooling`, on the code that enforces reviewer
 blinding. Everything around it was brought up during the coverage pass and this was left.
 
 It matters more than the number suggests: the scrubber is the mechanical half of blinding,
@@ -371,7 +371,7 @@ what it missed.
 
 **Status:** not started · deliberately deferred
 
-`craft-tooling` is host-agnostic except for `extensions/pi.ts` — 282 lines against ~1,900
+`tooling` is host-agnostic except for `extensions/pi.ts` — 282 lines against ~1,900
 of host-neutral code. Everything else (store, schema, pricing, versioning, blinding,
 mutation) works anywhere.
 
