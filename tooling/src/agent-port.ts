@@ -35,6 +35,9 @@ export const TOOL_MAP: Record<string, string> = {
 	Agent: "Agent",
 };
 
+/** Pi-only tools. Omitted from Claude Code output rather than mapped or rejected. */
+export const PI_ONLY_TOOLS = new Set(["subagent_wait"]);
+
 /**
  * Frontmatter keys that exist only for Pi. Listed rather than inferred so that a new
  * key added upstream reaches `portAgent` as an unknown and gets a decision, instead
@@ -125,10 +128,11 @@ export function portAgent(source: string): PortedAgent {
 	if (!name) throw new PortError("frontmatter has no name");
 	if (!description) throw new PortError(`${name}: frontmatter has no description`);
 
-	const tools = front.tools.map((tool) => {
+	const tools = front.tools.flatMap((tool) => {
+		if (PI_ONLY_TOOLS.has(tool)) return [];
 		const mapped = TOOL_MAP[tool];
 		if (!mapped) throw new PortError(`${name}: no Claude Code equivalent for tool \`${tool}\``);
-		return mapped;
+		return [mapped];
 	});
 
 	for (const key of front.keys) {
