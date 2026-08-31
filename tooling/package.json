@@ -5,6 +5,7 @@
 	"type": "module",
 	"description": "Scripting tools for the CRAFTS workflow (Pi + Claude Code)",
 	"bin": {
+		"craft-delta": "./bin/craft-delta.mjs",
 		"craft-discover": "./bin/craft-discover.mjs",
 		"craft-metrics": "./bin/craft-metrics.mjs",
 		"craft-routes": "./bin/craft-routes.mjs",

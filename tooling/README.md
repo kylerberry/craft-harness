@@ -1,3 +1,7 @@
+# craft-delta
+
+`craft-delta --base <R_BASE>` writes a post-Render YAML delta (base ref, changed files, validation commands/exit codes, source locations) under the OS temporary directory. It does not rerun Discovery or Graphify.
+
 # craft-discover
 
 `craft-discover` performs deterministic, read-only Discovery and writes a neutral YAML evidence packet beneath the OS temporary directory:
