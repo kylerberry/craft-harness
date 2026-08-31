@@ -51,6 +51,24 @@ test("fmtTokens abbreviates by magnitude and collapses an empty phase to a dash"
 
 // --- summarize ---
 
+test("show and doctor expose orchestration failures separately", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/p", repo: "demo", mode: "dag", kind: "chore" });
+		s.recordOrchestrationFailure(run.run_id, "validation", "workflow has an unknown dependency");
+		const text = summarize(s.loadAll());
+		assert.match(text, /orchestration failures:/);
+		assert.match(text, /validation  workflow has an unknown dependency/);
+		assert.ok(!text.includes("! ungated"));
+		const complaints = diagnose(s.loadAll());
+		assert.equal(complaints.length, 1);
+		assert.equal(complaints[0].kind, "orchestration-failure");
+		assert.match(complaints[0].detail, /validation/);
+	} finally {
+		cleanup();
+	}
+});
+
 test("summarize says so plainly when there is nothing to show", () => {
 	assert.equal(summarize([]), "no craft runs recorded");
 });

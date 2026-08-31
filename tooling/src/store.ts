@@ -10,6 +10,7 @@ import {
 	type InterventionKind,
 	type Kind,
 	type Mode,
+	type OrchestrationFailureKind,
 	type Outcome,
 	type PhaseExitFields,
 	type PhaseName,
@@ -20,6 +21,8 @@ import {
 	emptySeams,
 	emptyTokens,
 	phaseByName,
+	ORCHESTRATION_EVIDENCE_MAX_BYTES,
+	ORCHESTRATION_FAILURE_KINDS,
 	SCHEMA_VERSION,
 } from "./schema.ts";
 import { applyNotionalPricing, loadPriceTable, type PriceTable } from "./pricing.ts";
@@ -121,6 +124,14 @@ type LogEvent =
 	| { v: 1; t: "verify"; run_id: string; at: string; command: string; exit_code: number; phase: PhaseName | null }
 	| { v: 1; t: "mode"; run_id: string; at: string; mode: Mode }
 	| { v: 1; t: "kind"; run_id: string; at: string; kind: Kind }
+	| {
+			v: 1;
+			t: "orchestration_failure";
+			run_id: string;
+			at: string;
+			kind: OrchestrationFailureKind;
+			evidence: string;
+	  }
 	/**
 	 * Which harness ran this. Correctable after the fact because `openRun` returns an
 	 * existing run without applying `opts.host`, and the CLI defaults a missing
@@ -332,6 +343,23 @@ export class Store {
 			agent: opts.agent,
 		});
 		return this.get(runId) ?? this.missing(runId);
+	}
+
+	/** Record a bounded run-level defect without touching phase lifecycle state. */
+	recordOrchestrationFailure(runId: string, kind: OrchestrationFailureKind, evidence: string, at?: string): Run {
+		if (!ORCHESTRATION_FAILURE_KINDS.includes(kind)) throw new Error(`invalid orchestration failure kind ${kind}`);
+		if (
+			!evidence.trim() ||
+			Buffer.byteLength(evidence, "utf8") > ORCHESTRATION_EVIDENCE_MAX_BYTES ||
+			/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(evidence)
+		) {
+			throw new Error(
+				`orchestration failure evidence must be non-empty, single-line, control-free, and at most ${ORCHESTRATION_EVIDENCE_MAX_BYTES} UTF-8 bytes`,
+			);
+		}
+		this.require(runId);
+		this.append({ v: SCHEMA_VERSION, t: "orchestration_failure", run_id: runId, at: at ?? nowIso(), kind, evidence });
+		return this.require(runId);
 	}
 
 	/**
@@ -564,6 +592,7 @@ function fold(byId: Map<string, Run>, ev: LogEvent, finalMode?: Map<string, Mode
 			outcome: "open",
 			open_phase: null,
 			phase_entries: 0,
+			orchestration_failures: [],
 			last_closed_phase: null,
 			last_closed_at: null,
 			phases: [],
@@ -622,6 +651,9 @@ function fold(byId: Map<string, Run>, ev: LogEvent, finalMode?: Map<string, Mode
 			run.seams = computeSeams(run);
 			return;
 		}
+		case "orchestration_failure":
+			run.orchestration_failures.push({ kind: ev.kind, evidence: ev.evidence, at: ev.at });
+			return;
 		case "verify": {
 			run.last_verify = { command: ev.command, exit_code: ev.exit_code, at: ev.at, phase: ev.phase };
 			run.verify_count += 1;
@@ -829,6 +861,12 @@ export function summarize(runs: Run[]): string {
 		if (run.phase_entries === 0 && run.mode !== "dag") {
 			lines.push("  ! ungated — run started but no phase was ever entered");
 		}
+		if (run.orchestration_failures.length > 0) {
+			lines.push("  orchestration failures:");
+			for (const failure of run.orchestration_failures) {
+				lines.push(`    ${failure.kind}  ${failure.evidence}`);
+			}
+		}
 		if (run.last_verify) {
 			const v = run.last_verify;
 			const mark = v.exit_code === 0 ? "green" : `RED (exit ${v.exit_code})`;
@@ -868,7 +906,8 @@ export interface Complaint {
 		| "unverified-pass"
 		| "fix-without-findings"
 		| "phase-usage-missing"
-		| "unknown-host";
+
+		| "orchestration-failure"		| "unknown-host";
 	run_id?: string;
 	detail: string;
 	cost_usd: number;
@@ -889,6 +928,14 @@ export function diagnose(runs: Run[], now = Date.now(), staleHours = 12): Compla
 		total += runCost;
 		const un = run.phases.find((p) => p.name === "unattributed");
 		unattributed += un?.cost_usd ?? 0;
+		for (const failure of run.orchestration_failures) {
+			out.push({
+				kind: "orchestration-failure",
+				run_id: run.run_id,
+				detail: `${run.repo ?? run.cwd}: ${failure.kind} — ${failure.evidence}`,
+				cost_usd: 0,
+			});
+		}
 
 		// `dag` runs have no phases by design; only a CRAFTS run is expected to gate.
 		if (run.phase_entries === 0 && run.mode !== "dag") {

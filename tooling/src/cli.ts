@@ -17,11 +17,13 @@ import {
 	HOSTS,
 	INTERVENTION_KINDS,
 	KINDS,
+	ORCHESTRATION_FAILURE_KINDS,
 	TERMINAL_REASONS,
 	type Host,
 	type InterventionKind,
 	type Kind,
 	type Mode,
+	type OrchestrationFailureKind,
 	type Outcome,
 	type PhaseName,
 	type TerminalReason,
@@ -83,6 +85,7 @@ Usage:
                        [--cache-read N] [--cache-write N] [--turns N] [--tool NAME] [--agent NAME]
                        [--subagent] [--quota-error] [--timeout] [--failover] [--blinding-scrubs N]
   craft-metrics verify --run ID --command "npm test" --exit-code N
+  craft-metrics orchestration-failure --run ID --kind validation|parse|dispatch --evidence TEXT
   craft-metrics pause  --run ID
   craft-metrics resume --run ID
   craft-metrics mode   --run ID --mode MODE
@@ -165,6 +168,14 @@ function parseTerminalReason(argv: string[], io: Io): TerminalReason {
 		fail(io, `invalid --reason ${reason} (use ${TERMINAL_REASONS.join("|")})`);
 	}
 	return reason as TerminalReason;
+}
+
+function parseOrchestrationFailureKind(argv: string[], io: Io): OrchestrationFailureKind {
+	const kind = requireArg("--kind", argv, io);
+	if (!ORCHESTRATION_FAILURE_KINDS.includes(kind as OrchestrationFailureKind)) {
+		fail(io, `invalid --kind ${kind} (use ${ORCHESTRATION_FAILURE_KINDS.join("|")})`);
+	}
+	return kind as OrchestrationFailureKind;
 }
 
 function parseHost(argv: string[], io: Io): Host {
@@ -270,6 +281,15 @@ export function main(argv: string[], io: Io = defaultIo): number {
 				failover: has("--failover", rest),
 				blinding_scrubs: num("--blinding-scrubs", rest),
 			});
+			io.write(run.run_id + "\n");
+			return 0;
+		}
+		case "orchestration-failure": {
+			const run = store.recordOrchestrationFailure(
+				requireArg("--run", rest, io),
+				parseOrchestrationFailureKind(rest, io),
+				requireArg("--evidence", rest, io),
+			);
 			io.write(run.run_id + "\n");
 			return 0;
 		}

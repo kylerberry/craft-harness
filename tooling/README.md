@@ -112,6 +112,15 @@ craft-metrics intervene --run "$RUN" --phase C --kind finalization-request \
 This append-only control event records the observed limits and timestamp. It is not model
 usage and does not change phase cycles, turns, tool calls, timeouts, or failovers.
 
+Workflow validation, packet parsing, and dispatch defects belong to the run rather than a phase attempt:
+
+```bash
+craft-metrics orchestration-failure --run "$RUN" --kind validation --evidence "unknown dependency"
+```
+
+Kinds are `validation`, `parse`, or `dispatch`. Evidence must be non-empty, single-line,
+control-free, and at most 1,024 UTF-8 bytes. Recording this event never enters or exits a
+phase and does not change phase entries, cycles, or retry counts.
 ## Show
 
 ```bash
@@ -194,3 +203,5 @@ being wrong. `doctor` reports:
   has zero attributed turns and tokens; phase-level activity and usage counts identify
   where attribution was lost, while genuinely zero-work phases remain valid
 - **unknown-host** — a run that names no harness, so it compares against nothing
+- **orchestration-failure** — a bounded run-level validation, parse, or dispatch defect;
+  reported separately from phase failures

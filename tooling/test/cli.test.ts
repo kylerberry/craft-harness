@@ -74,6 +74,31 @@ test("an unknown command exits 2 and shows usage", () => {
 	}
 });
 
+test("orchestration-failure records valid kinds and rejects unsafe evidence", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "chore", "--mode", "dag"], h.io);
+		const id = h.out().trim();
+		assert.equal(main(["orchestration-failure", "--run", id, "--kind", "dispatch", "--evidence", "worker unavailable"], h.io), 0);
+		assert.deepEqual(h.events().find((e) => e.t === "orchestration_failure"), {
+			v: 1,
+			t: "orchestration_failure",
+			run_id: id,
+			at: h.events().find((e) => e.t === "orchestration_failure").at,
+			kind: "dispatch",
+			evidence: "worker unavailable",
+		});
+		const count = h.events().length;
+		assert.equal(run(["orchestration-failure", "--run", id, "--kind", "compile", "--evidence", "bad"], h.io), 2);
+		assert.match(h.err(), /invalid --kind/);
+		assert.equal(run(["orchestration-failure", "--run", id, "--kind", "parse"], h.io), 2);
+		assert.equal(run(["orchestration-failure", "--run", id, "--kind", "parse", "--evidence", "x".repeat(1025)], h.io), 2);
+		assert.equal(h.events().length, count);
+	} finally {
+		h.cleanup();
+	}
+});
+
 test("start writes a run and echoes its id", () => {
 	const h = harness();
 	try {

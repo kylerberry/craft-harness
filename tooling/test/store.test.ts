@@ -18,6 +18,36 @@ function tmpStore(prices: PriceTable = new Map()): { store: Store; cleanup: () =
 	};
 }
 
+test("orchestration failures are bounded run events that do not change phase attempts", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/demo", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "R", { at: "2026-04-08T10:00:00.000Z" });
+		const before = s.get(run.run_id)!;
+		const phaseState = structuredClone(before.phases);
+		s.recordOrchestrationFailure(run.run_id, "dispatch", "worker launch rejected", "2026-04-08T10:00:01.000Z");
+		const after = s.get(run.run_id)!;
+		assert.deepEqual(after.orchestration_failures, [
+			{ kind: "dispatch", evidence: "worker launch rejected", at: "2026-04-08T10:00:01.000Z" },
+		]);
+		assert.equal(after.phase_entries, before.phase_entries);
+		assert.equal(after.open_phase, before.open_phase);
+		assert.deepEqual(after.phases, phaseState);
+
+		for (const [kind, evidence] of [["validation", "bad graph"], ["parse", "invalid packet"]] as const) {
+			s.recordOrchestrationFailure(run.run_id, kind, evidence);
+		}
+		assert.deepEqual(s.get(run.run_id)!.orchestration_failures.map((f) => f.kind), ["dispatch", "validation", "parse"]);
+		assert.throws(() => s.recordOrchestrationFailure(run.run_id, "compile" as never, "bad"), /invalid orchestration failure kind/);
+		for (const evidence of ["", "   ", "line one\nline two", "tab\there", "\u0007", "x".repeat(1025), "é".repeat(513)]) {
+			assert.throws(() => s.recordOrchestrationFailure(run.run_id, "parse", evidence), /evidence/);
+		}
+		s.recordOrchestrationFailure(run.run_id, "parse", "x".repeat(1024));
+	} finally {
+		cleanup();
+	}
+});
+
 test("usage between enter/exit lands on that phase", () => {
 	const { store: s, cleanup } = tmpStore();
 	try {
