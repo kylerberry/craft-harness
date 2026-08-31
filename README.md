@@ -44,12 +44,17 @@ agents/
 ├── craft-security-review.md  # T — Tighten final-diff review (P0 gate)
 └── node-conductor.md         # Conducts one DAG node through a CRAFTS protocol
 
-tooling/                      # Metrics, mutation tooling, storage
+tooling/                      # Metrics, mutation, Discovery, routing
+├── bin/craft-discover.mjs    # Deterministic evidence packet
+├── bin/craft-delta.mjs       # Post-Render change artifact
+├── bin/craft-routes.mjs      # Pi role fallback installer
+├── bin/craft-metrics.mjs     # Phase-grained collector
 ├── extensions/pi.ts          # Pi host adapter
 ├── extensions/claude-code.ts # Claude Code host adapter (hooks)
 └── package.json
 
 bin/link-global               # Author-machine live install
+CHANGELOG.md                  # Protocol and toolkit history
 ```
 
 ## CRAFTS at a glance
@@ -75,7 +80,21 @@ CRAFTS is a sequential delivery workflow:
 | `/craft-hitl` | Same as `/craft`, HITL Render | A `TODO(human)` seam is reserved. |
 | `/craft-lite` | `D → C → R → A → [F] → S` | Plan counsel and Tighten are out of scope (prototype, spike). |
 
+Protocol version **5**. Pass it verbatim at run start: `craft-metrics start --craft-version 5`. A missed bump mixes two workflows under one label.
+
 Every protocol runs a required Render-exit simplify pass after tests go green (tests must stay green; unrecoverable simplify is reverted) — the conductor performs it directly, not as a separate agent spawn. `/craft-lite` skips plan counsel and Tighten and uses `--mode lite`, which the metrics store enforces by rejecting `counsel`/`T` phase entries under that mode.
+
+### Discovery packet and Render delta
+
+D runs `craft-discover` (conductor, no spawn). It writes an immutable YAML packet under the OS temporary directory: authority sources, hashed task sources, Graphify `graph_status` (`current` | `stale` | `unavailable`) with candidates only when current, verified facts with citations, and evidence gaps. Graphify is never rebuilt during a run. Secrets and identity metadata are rejected before publication. C does not start without that packet. A structured blocked result naming unresolved authority stops the run.
+
+After R, `craft-delta --base <R_BASE>` records changed files, validation exit codes, and source locations without rerunning Discovery. A and T receive the delta **and** an instruction to inspect the final diff independently. F receives only the blocking-context slice of the packet.
+
+### Phase terminals and health
+
+Each advisory phase ends in exactly one structured shape: its report, or `blocked` naming the missing evidence or decision. No third outcome. Soft inspection warnings finalize from current evidence; they do not excuse skipping independent final-diff review.
+
+The conductor awaits one terminal result (`subagent_wait` on Pi; Claude Code has no equivalent and must still await the Agent return). After a no-report turn/tool threshold it records one `craft-metrics intervene --kind finalization-request` without disabling inspection tools. Deadline exhaustion exits the phase with `--reason timeout` and a blocked-detail reference. Launch validation/parse/dispatch defects are `orchestration-failure` events: they do not enter a phase or consume its one retry. Timeout or model failure retries only the same role through host-configured `fallbackModels`.
 
 ### Plan counsel gate and security triggers
 
@@ -124,11 +143,13 @@ Executes an approved `dag.json` as the supervisor: it owns dispatch, merging, an
 - `--merge hitl`: present a per-node review table (status, branch, worktree path, diffstat, evidence) and stop; nothing merges and no worktree is removed without explicit approval.
 - `--protocol` passes through to every node-conductor. Default `craft`; use `craft-hitl` only when nodes actually have `TODO(human)` seams; `craft-lite` skips Tighten.
 
+Node tasks are written as packets under the OS temporary directory and launched from the static script `tooling/src/dag-workflow.static.js`. Arbitrary node text never becomes JavaScript source. Every execution attempt runs `subagent action: validate` on that exact script first; a failed validation records orchestration failure and dispatches nothing.
+
 Dispatch is a **wave barrier**: a node is ready when every dependency is passed *and merged*; at most 3 node-conductors run per wave; the next wave opens only after the current one is terminal and its approved passed nodes are merged. Each node gets a supervisor-created Git worktree (`<repo>/tmp/worktree-<id>`, branch `dag/<id>`) — never a runtime-managed disposable worktree — so failed nodes stay browsable for diagnosis. An integration conflict gets exactly one re-derivation (`-attempt-2`); a failed or blocked node freezes its transitive dependents in both merge modes.
 
 ### `node-conductor`
 
-The `node-conductor` agent conducts exactly one DAG node end-to-end. It loads the named protocol skill (`craft`, `craft-hitl`, or `craft-lite`), spawns each directed phase agent sequentially, executes the implementation itself in its worktree — performing the required R-exit simplify pass and Sharpen directly, never as a spawn — and commits with the node id prefix (`[n3] ...`). Fanout is depth 2: the supervisor launches only node-conductors, and a conductor launches only protocol phase agents. Dependencies arrive as already-merged code in the worktree, never as transcripts or sibling payloads. `craft-lite` nodes never spawn `craft-counsel` or `craft-security-review`.
+The `node-conductor` agent conducts exactly one DAG node end-to-end. It loads the named protocol skill (`craft`, `craft-hitl`, or `craft-lite`), runs Discovery before C, spawns each directed phase agent sequentially, awaits one terminal result per phase, executes the implementation itself in its worktree — performing the required R-exit simplify pass and Sharpen directly, never as a spawn — and commits with the node id prefix (`[n3] ...`). Advisory roles receive packet slices, not the whole packet; A and T also get the Render delta. Fanout is depth 2: the supervisor launches only node-conductors, and a conductor launches only protocol phase agents. Dependencies arrive as already-merged code in the worktree, never as transcripts or sibling payloads. `craft-lite` nodes never spawn `craft-counsel` or `craft-security-review`.
 
 ## Installation
 
@@ -185,6 +206,7 @@ Install the Pi role routes with `craft-routes --host pi --settings ~/.pi/agent/s
 - **Security starts in planning.** Threat boundaries and abuse cases are considered before code exists, then rechecked against the final diff.
 - **Knowledge compounds.** Sharpen records durable lessons without turning ordinary fixes into documentation churn.
 - **Humans own consequential judgment.** HITL reserves explicit seams for people while the agent handles surrounding implementation and verification.
+- **Phases terminate.** A gate produces a report, a blocked result, or a recorded timeout. Indefinite inspection is a defect; so is a launch failure counted as a phase retry.
 
 ## License
 
