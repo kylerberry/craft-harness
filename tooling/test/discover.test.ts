@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -72,6 +72,67 @@ test("multiple current raw authorities block and name every conflicting source",
 		const yaml = packet(result);
 		assert.ok(yaml.includes('  - "authority conflict: docs/raw/one.md, docs/raw/two.md"'), yaml);
 	} finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("records exactly one graph_status and does not rebuild Graphify", () => {
+	const root = fixture();
+	const bin = join(root, "bin");
+	const marker = join(root, "graphify-invoked");
+	try {
+		mkdirSync(bin);
+		writeFileSync(join(bin, "graphify"), `#!/bin/sh\necho invoked > "${marker}"\n`, { mode: 0o755 });
+		const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` };
+		const runEnv = (args: string[]) =>
+			spawnSync(process.execPath, ["--experimental-strip-types", cli, "--cwd", root, ...args], { encoding: "utf8", env });
+		const missing = runEnv(["--task-source", "pkg/sub/task.txt"]);
+		assert.equal(missing.status, 0, missing.stderr);
+		assert.match(packet(missing), /^graph_status: unavailable$/m);
+		assert.equal([...packet(missing).matchAll(/^graph_status:/gm)].length, 1);
+
+		mkdirSync(join(root, "graphify-out"), { recursive: true });
+		writeFileSync(join(root, "graphify-out", "graph.json"), JSON.stringify({ commit: "not-the-head" }));
+		const stale = runEnv(["--task-source", "pkg/sub/task.txt"]);
+		assert.equal(stale.status, 0, stale.stderr);
+		assert.match(packet(stale), /^graph_status: stale$/m);
+
+		const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+		writeFileSync(join(root, "graphify-out", "graph.json"), JSON.stringify({ commit: head, candidates: [{ path: "pkg/sub/task.txt", reason: "task" }] }));
+		const current = runEnv(["--task-source", "pkg/sub/task.txt"]);
+		assert.equal(current.status, 0, current.stderr);
+		assert.match(packet(current), /^graph_status: current$/m);
+		assert.match(packet(current), /pkg\/sub\/task.txt/);
+
+		assert.equal(existsSync(marker), false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("rejects secrets before writing a packet and leaves no file", () => {
+	const root = fixture();
+	try {
+		writeFileSync(join(root, "pkg", "sub", "task.txt"), "token=sk-live-secret-value\n");
+		execFileSync("git", ["add", "."], { cwd: root });
+		execFileSync("git", ["commit", "-qm", "secret"], { cwd: root });
+		const result = run(root, ["--task-source", "pkg/sub/task.txt"]);
+		assert.equal(result.status, 1, result.stderr);
+		assert.equal(result.stdout.trim(), "");
+		assert.match(result.stderr, /secret|credential|token/i);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("enforces packet item bounds and omits identity metadata", () => {
+	const root = fixture();
+	try {
+		const yaml = packet(run(root, ["--task-source", "pkg/sub/task.txt"]));
+		assert.doesNotMatch(yaml, /\b(author|model|agent|workflow|branch|dag)\b/i);
+		assert.doesNotMatch(yaml, /\bI\s+(chose|decided)\b/);
+		assert.ok(Buffer.byteLength(yaml, "utf8") <= 65536);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("rejects task sources that escape the repository", () => {

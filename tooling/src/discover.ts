@@ -2,6 +2,18 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
+export const PACKET_BYTE_LIMIT = 65536;
+export const PACKET_ITEM_LIMIT = 200;
+const SECRET = /(?:token|password|secret|api[_-]?key)\s*[=:]\s*\S+|sk-[A-Za-z0-9_-]{8,}/i;
+
+export class PacketBlocked extends Error {
+	reason: string;
+	constructor(reason: string) {
+		super(reason);
+		this.reason = reason;
+	}
+}
+
 export interface EvidencePacket {
 	schema_version: 1;
 	base_commit: string;
@@ -49,6 +61,7 @@ export function collectEvidence(rootInput: string, commit: string, taskInputs: s
 	const tasks = taskInputs.map((input) => {
 		const full = checkedFile(root, resolve(root, input));
 		const text = readFileSync(full, "utf8");
+		if (SECRET.test(text)) throw new PacketBlocked(`secret or credential in ${rel(root, full)}`);
 		for (let dir = dirname(full); inside(root, dir); dir = dirname(dir)) {
 			const candidate = join(dir, "AGENTS.md");
 			if (existsSync(candidate)) {
@@ -98,7 +111,7 @@ export function collectEvidence(rootInput: string, commit: string, taskInputs: s
 	}
 
 	const graph = graphEvidence(root, commit);
-	return {
+	const packet: EvidencePacket = {
 		schema_version: 1,
 		base_commit: commit,
 		graph_status: graph.graph_status,
@@ -108,6 +121,10 @@ export function collectEvidence(rootInput: string, commit: string, taskInputs: s
 		verified_facts: verified.sort((a, b) => a.source.localeCompare(b.source) || a.fact.localeCompare(b.fact)),
 		evidence_gaps: [...new Set(gaps)].sort(),
 	};
+	for (const list of [packet.authority_sources, packet.task_sources, packet.graph_candidates, packet.verified_facts, packet.evidence_gaps]) {
+		if (list.length > PACKET_ITEM_LIMIT) throw new PacketBlocked(`packet exceeds item bound ${PACKET_ITEM_LIMIT}`);
+	}
+	return packet;
 }
 
 const q = (value: string) => JSON.stringify(value);
@@ -127,5 +144,7 @@ export function serializeEvidence(packet: EvidencePacket): string {
 	objectList("verified_facts", packet.verified_facts, ["fact", "source"]);
 	lines.push("evidence_gaps:" + (packet.evidence_gaps.length ? "" : " []"));
 	for (const gap of packet.evidence_gaps) lines.push(`  - ${q(gap)}`);
-	return lines.join("\n") + "\n";
+	const yaml = lines.join("\n") + "\n";
+	if (Buffer.byteLength(yaml, "utf8") > PACKET_BYTE_LIMIT) throw new PacketBlocked(`packet exceeds size bound ${PACKET_BYTE_LIMIT}`);
+	return yaml;
 }

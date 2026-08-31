@@ -4,7 +4,7 @@ import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { collectEvidence, serializeEvidence } from "./discover.ts";
+import { PacketBlocked, collectEvidence, serializeEvidence } from "./discover.ts";
 
 const USAGE = `Usage: craft-discover --task-source PATH [--task-source PATH ...] [--fact "CLAIM::PATH:LINE"] [--cwd PATH]\n`;
 
@@ -28,16 +28,18 @@ export function main(argv: string[]): number {
 		const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8" }).trim();
 		const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 		const packet = collectEvidence(root, commit, tasks, values("--fact", argv));
+		const yaml = serializeEvidence(packet);
 		const dir = mkdtempSync(join(tmpdir(), "craft-discover-"));
 		const path = join(dir, "evidence.yaml");
-		writeFileSync(path, serializeEvidence(packet), { mode: 0o600 });
+		writeFileSync(path, yaml, { mode: 0o600 });
 		process.stdout.write(path + "\n");
 		const blocked = packet.evidence_gaps.some((gap) => gap.startsWith("authority conflict:") || gap.startsWith("unresolved authority source:"));
 		if (blocked) process.stderr.write(packet.evidence_gaps.filter((gap) => gap.includes("authority")).join("; ") + "\n");
 		return blocked ? 1 : 0;
 	} catch (error) {
-		process.stderr.write((error instanceof Error ? error.message : String(error)) + "\n");
-		return 2;
+		const message = error instanceof Error ? error.message : String(error);
+		process.stderr.write(message + "\n");
+		return error instanceof PacketBlocked ? 1 : 2;
 	}
 }
 
