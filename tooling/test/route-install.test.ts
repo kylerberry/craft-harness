@@ -74,6 +74,11 @@ test("--apply replaces CRAFT role routes and pins node-conductor inherit", () =>
 	assert.deepEqual(again.changed, []);
 });
 
+test("planner has a preconfigured second fallback without overlapping counsel", () => {
+	assert.deepEqual(DEFAULT_ROUTES["craft-planner"].fallbackModels, ["xai/grok-4.6", "openai-codex/gpt-5.6-terra"]);
+	assert.doesNotThrow(() => validateSeams(DEFAULT_ROUTES));
+});
+
 test("validation rejects overlapping families at C→counsel, R→A, and R→T", () => {
 	const overlapC = {
 		...DEFAULT_ROUTES,

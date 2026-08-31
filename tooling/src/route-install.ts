@@ -6,7 +6,7 @@ export type RoleRoute = {
 };
 
 export const DEFAULT_ROUTES: Record<string, RoleRoute> = {
-	"craft-planner": { model: "openai-codex/gpt-5.6-sol", fallbackModels: ["xai/grok-4.6"] },
+	"craft-planner": { model: "openai-codex/gpt-5.6-sol", fallbackModels: ["xai/grok-4.6", "openai-codex/gpt-5.6-terra"] },
 	"craft-counsel": { model: "zai/glm-5.3", fallbackModels: ["moonshot/kimi-k3"] },
 	"craft-builder": { model: "zai/glm-5.2", fallbackModels: ["moonshot/kimi-k2.7-code"] },
 	"craft-evaluator": { model: "xai/grok-4.6", fallbackModels: ["openai-codex/gpt-5.6-sol"] },

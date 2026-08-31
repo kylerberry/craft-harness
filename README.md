@@ -182,7 +182,7 @@ Agent frontmatter intentionally sets **no `model`** — with one deliberate exce
 
 | Role | Tier | Author-machine pin |
 | --- | --- | --- |
-| C — planner | heavy | `openai-codex/gpt-5.6-sol` |
+| C — planner | heavy | `openai-codex/gpt-5.6-sol` → `xai/grok-4.6` → `openai-codex/gpt-5.6-terra` |
 | Counsel — `craft-counsel` | medium, different family from planner | `zai/glm-5.3` |
 | R/F — builder (incl. inline simplify) | medium, different family from evaluator | `zai/glm-5.2` |
 | A — evaluator | heavy, different family from builder | `xai/grok-4.6` |

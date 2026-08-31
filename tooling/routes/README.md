@@ -19,7 +19,7 @@ Defaults (C→counsel, R→A, R→T family sets disjoint):
 
 | Role | Primary | Fallback |
 | --- | --- | --- |
-| `craft-planner` | `openai-codex/gpt-5.6-sol` | `xai/grok-4.6` |
+| `craft-planner` | `openai-codex/gpt-5.6-sol` | `xai/grok-4.6`, then `openai-codex/gpt-5.6-terra` |
 | `craft-counsel` | `zai/glm-5.3` | `moonshot/kimi-k3` |
 | `craft-builder` | `zai/glm-5.2` | `moonshot/kimi-k2.7-code` |
 | `craft-evaluator` | `xai/grok-4.6` | `openai-codex/gpt-5.6-sol` |
