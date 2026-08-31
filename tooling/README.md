@@ -172,6 +172,8 @@ being wrong. `doctor` reports:
 - **ungated** — `start` was called but no phase was ever entered, so the whole run's
   cost is unattributable
 - **stale-open** — a run left open with no `run_end` (`--stale-hours`, default 12)
+- **phase-never-exited** — a phase with more `phase_enter` events than explicit
+  `phase_exit` events, even if `run_end` or a later phase implicitly closed it
 - **costless-model** — a model that burned tokens and reported `$0`, which makes
   cost incomparable across runs. Subscription-billed models (Codex) do this; compare
   tokens instead

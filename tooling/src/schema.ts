@@ -119,6 +119,8 @@ export interface PhaseRecord {
 	 * indistinguishable from a clean first-time pass.
 	 */
 	cycles?: number;
+	/** Explicit `phase_exit` events folded for this phase; implicit closure does not count. */
+	exits?: number;
 	/** Blocking findings summed across every cycle, rather than only the last. */
 	blocking_findings_total?: number;
 	t_status?: string;

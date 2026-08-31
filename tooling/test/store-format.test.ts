@@ -224,6 +224,77 @@ test("doctor is silent on a healthy run", () => {
 	}
 });
 
+test("doctor reports a phase that was entered but never explicitly exited before run_end", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/blocked", repo: "blocked", mode: "full" });
+		s.enterPhase(run.run_id, "R");
+		s.endRun(run.run_id, "blocked");
+		const complaint = diagnose(s.loadAll()).find((c) => c.kind === "phase-never-exited");
+		assert.equal(complaint?.run_id, run.run_id);
+		assert.match(complaint?.detail ?? "", /phase R/);
+	} finally {
+		cleanup();
+	}
+});
+
+test("doctor ignores explicitly exited phases and phaseless dag supervisors", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/complete", repo: "complete", mode: "full" });
+		s.enterPhase(run.run_id, "C");
+		s.exitPhase(run.run_id, "C");
+		s.endRun(run.run_id, "completed");
+		const supervisor = s.openRun({ host: "pi", cwd: "/tmp/supervisor", repo: "supervisor", mode: "dag" });
+		s.recordUsage(supervisor.run_id, { cost_usd: 1, turns: 1 });
+		assert.ok(!diagnose(s.loadAll()).some((c) => c.kind === "phase-never-exited"));
+	} finally {
+		cleanup();
+	}
+});
+
+test("an exit before an entry cannot hide a later missing exit", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/out-of-order", repo: "out-of-order", mode: "full" });
+		s.exitPhase(run.run_id, "C");
+		s.enterPhase(run.run_id, "C");
+		s.endRun(run.run_id, "blocked");
+		assert.ok(diagnose(s.loadAll()).some((c) => c.kind === "phase-never-exited" && c.run_id === run.run_id));
+	} finally {
+		cleanup();
+	}
+});
+
+test("doctor preserves the repeated-C blocked-run boundary", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/repeated", repo: "repeated", mode: "full" });
+		s.enterPhase(run.run_id, "C");
+		s.enterPhase(run.run_id, "C");
+		s.endRun(run.run_id, "blocked");
+		const complaints = diagnose(s.loadAll()).filter((c) => c.kind === "phase-never-exited");
+		assert.equal(complaints.length, 1, "report once per phase rather than once per unmatched entry");
+		assert.equal(complaints[0]?.run_id, run.run_id);
+		assert.match(complaints[0]?.detail ?? "", /phase C/);
+	} finally {
+		cleanup();
+	}
+});
+
+test("stale-open remains separate from phase-never-exited", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/stale", repo: "stale", mode: "full", at: "2026-04-08T00:00:00.000Z" });
+		s.enterPhase(run.run_id, "C", { at: "2026-04-08T00:01:00.000Z" });
+		const kinds = diagnose(s.loadAll(), Date.parse("2026-04-08T13:00:00.000Z"), 12).map((c) => c.kind);
+		assert.ok(kinds.includes("stale-open"));
+		assert.ok(kinds.includes("phase-never-exited"));
+	} finally {
+		cleanup();
+	}
+});
+
 test("the stale threshold is honoured in both directions", () => {
 	const { store: s, cleanup } = tmpStore();
 	try {
