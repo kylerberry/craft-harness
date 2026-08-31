@@ -9,6 +9,10 @@ craft-discover --task-source src/file.ts \
 
 `--task-source` and `--fact` are repeatable; paths are repository-relative. The command resolves applicable ancestor `AGENTS.md` files and a single Markdown link whose label contains `current` in `docs/wiki/index.md`. It hashes exact task-source bytes, verifies each claimed fact against its cited line, and records Graphify output as `current`, `stale`, or `unavailable` without rebuilding it. Exit 0 means authority resolved, exit 1 means a packet was written with unresolved/conflicting authority named in `evidence_gaps`, and exit 2 means invalid input (no packet). The packet always contains exactly `schema_version`, `base_commit`, `graph_status`, `authority_sources`, `task_sources`, `graph_candidates`, `verified_facts`, and `evidence_gaps`.
 
+# craft-routes
+
+`craft-routes --host pi --settings PATH` installs the preapproved CRAFT role primary and `fallbackModels` chains into a Pi settings file at `subagents.agentOverrides`. Configured fallbacks handle provider/model timeout or failure for the **same role**; conductors may not select ad hoc replacement models. Re-running is a no-op when the routes are already valid. Claude Code and other hosts fail explicitly.
+
 # craft-metrics
 
 Phase-grained collector for CRAFT runs. Skills emit semantics; hosts emit usage. Neither is complete alone.

@@ -169,7 +169,9 @@ Agent frontmatter intentionally sets **no `model`** — with one deliberate exce
 
 `node-conductor` is the one deliberate exception to that rule: its frontmatter pins `openai-codex/gpt-5.6-terra` so every DAG node gets the same conductor regardless of host overrides — it is a node's sole orchestrator and sole writer, not an advisory lens a host should re-tier per phase.
 
-Give every pin a `fallbackModels` chain (rate-limit and overload errors walk it automatically); keeping subscription-capped providers out of primary positions and fallback-only models in the chain degrades gracefully instead of failing the phase.
+Give every pin a `fallbackModels` chain (rate-limit and overload errors walk it automatically); keeping subscription-capped providers out of primary positions and fallback-only models in the chain degrades gracefully instead of failing the phase. Configured fallbacks retry the **same role** on provider or model timeout/failure. Conductors must not pick an ad hoc replacement model.
+
+Install the Pi role routes with `craft-routes --host pi --settings ~/.pi/agent/settings.json`. The helper merges into `subagents.agentOverrides`, preserves valid user-supplied routes and unrelated settings, and refuses overlapping families at C→counsel, R→A, and R→T. Claude Code is unsupported and fails explicitly rather than inventing routing.
 
 ## Design principles
 

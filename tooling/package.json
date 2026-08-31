@@ -7,6 +7,7 @@
 	"bin": {
 		"craft-discover": "./bin/craft-discover.mjs",
 		"craft-metrics": "./bin/craft-metrics.mjs",
+		"craft-routes": "./bin/craft-routes.mjs",
 		"craft-mutate": "./bin/craft-mutate.mjs"
 	},
 	"scripts": {
