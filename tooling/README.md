@@ -178,4 +178,7 @@ being wrong. `doctor` reports:
   cost incomparable across runs. Subscription-billed models (Codex) do this; compare
   tokens instead
 - **unattributed** — share of total spend that landed outside any phase
+- **phase-usage-missing** — an entered phase recorded tool or subagent activity but
+  has zero attributed turns and tokens; phase-level activity and usage counts identify
+  where attribution was lost, while genuinely zero-work phases remain valid
 - **unknown-host** — a run that names no harness, so it compares against nothing

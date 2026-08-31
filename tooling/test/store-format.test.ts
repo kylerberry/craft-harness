@@ -479,3 +479,73 @@ test("a Fix following a T P0 finding is not flagged", () => {
 		cleanup();
 	}
 });
+
+// --- phase-usage-missing ---
+
+test("doctor flags entered phases with activity but no attributed usage", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/missing", repo: "missing", mode: "full" });
+		s.enterPhase(run.run_id, "C");
+		s.recordUsage(run.run_id, { tool_name: "read" });
+		s.recordUsage(run.run_id, { tool_name: "bash" });
+		s.exitPhase(run.run_id, "C");
+
+		const complaint = diagnose(s.loadAll()).find((c) => c.kind === "phase-usage-missing");
+		assert.equal(complaint?.run_id, run.run_id);
+		assert.match(complaint?.detail ?? "", /phase C/);
+		assert.match(complaint?.detail ?? "", /2 tool/);
+		assert.match(complaint?.detail ?? "", /0 subagent.*0 turns.*0 tokens/);
+	} finally {
+		cleanup();
+	}
+});
+
+test("doctor recognizes subagent activity with no turns or tokens", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/child", repo: "child", mode: "full" });
+		s.enterPhase(run.run_id, "C");
+		s.recordUsage(run.run_id, { subagent: true, cost_usd: 0.4 });
+		s.exitPhase(run.run_id, "C");
+
+		const complaint = diagnose(s.loadAll()).find((c) => c.kind === "phase-usage-missing");
+		assert.match(complaint?.detail ?? "", /1 subagent/);
+	} finally {
+		cleanup();
+	}
+});
+
+test("doctor accepts activity when turns or tokens are attributed", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const withTurns = s.openRun({ host: "pi", cwd: "/tmp/turns", mode: "full" });
+		s.enterPhase(withTurns.run_id, "C");
+		s.recordUsage(withTurns.run_id, { tool_name: "read", turns: 2 });
+		s.exitPhase(withTurns.run_id, "C");
+
+		const withTokens = s.openRun({ host: "pi", cwd: "/tmp/tokens", mode: "full" });
+		s.enterPhase(withTokens.run_id, "C");
+		s.recordUsage(withTokens.run_id, {
+			tool_name: "read",
+			tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 5 },
+		});
+		s.exitPhase(withTokens.run_id, "C");
+
+		assert.ok(!diagnose(s.loadAll()).some((c) => c.kind === "phase-usage-missing"));
+	} finally {
+		cleanup();
+	}
+});
+
+test("doctor accepts a genuinely zero-work entered phase", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/zero", mode: "full" });
+		s.enterPhase(run.run_id, "S");
+		s.exitPhase(run.run_id, "S");
+		assert.ok(!diagnose(s.loadAll()).some((c) => c.kind === "phase-usage-missing"));
+	} finally {
+		cleanup();
+	}
+});

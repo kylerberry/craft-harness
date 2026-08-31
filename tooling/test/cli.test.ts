@@ -379,6 +379,25 @@ test("doctor names a run that belongs to no harness", () => {
 	}
 });
 
+test("doctor fails a C phase with tool activity but zero usage", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "feature", "--mode", "full", "--host", "pi"], h.io);
+		const id = h.out().trim();
+		main(["enter", "--run", id, "--phase", "C"], h.io);
+		main(["usage", "--run", id, "--tool", "read"], h.io);
+		main(["exit", "--run", id, "--phase", "C"], h.io);
+		main(["end", "--run", id, "--outcome", "completed"], h.io);
+
+		assert.equal(main(["doctor"], h.io), 1);
+		assert.match(h.out(), /phase-usage-missing/);
+		assert.match(h.out(), /phase C/);
+		assert.match(h.out(), /1 tool/);
+	} finally {
+		h.cleanup();
+	}
+});
+
 test("totals --all blends versions into a single table", () => {
 	const h = harness();
 	try {
