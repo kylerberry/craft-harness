@@ -159,7 +159,7 @@ worse than missing data because it looks like signal.
 Pass `--craft-version N` at `start`. Runs recorded before that flag existed are classified
 from what they actually spawned: `craft-plan-*` or a spawned `craft-code-simplifier` /
 `craft-sharpener` marks v3; `craft-counsel`, a recorded verify, blinding scrubs, or an R
-decision record marks v4. Inference is always labelled — `~` in `show`, `(n inferred)` in
+decision record marks v4; an entered `D` phase marks v5. Inference is always labelled — `~` in `show`, `(n inferred)` in
 `totals` — and conflicting or absent signals resolve to unknown rather than a guess.
 
 `totals` splits by version by default. This is not cosmetic: all 23 recorded `counsel`

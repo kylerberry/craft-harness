@@ -9,7 +9,7 @@ description: >-
 
 # CRAFTS HITL Adapter
 
-Before execution, read the sibling `../craft/SKILL.md` completely and apply its canonical workflow in **HITL mode**. This file defines only the entry condition and override; `/craft` owns every phase, counsel, security, reporting, and escalation contract.
+Before execution, read the sibling `../craft/SKILL.md` completely and apply its canonical workflow (`D → C → counsel → R → A → [F] → T → S`) in **HITL mode**. This file defines only the entry condition and override; `/craft` owns every phase, counsel, security, reporting, and escalation contract.
 
 Use HITL mode when the task, issue, or user reserves a consequential design or implementation decision for a human. Use autonomous `/craft` when no such seam exists.
 

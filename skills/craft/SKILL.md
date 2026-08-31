@@ -1,18 +1,18 @@
 ---
 name: craft
 command: craft
-craft-version: "4"
+craft-version: "5"
 argument-hint: "Optional: hitl"
 icon: Hammer
 description: >-
-  Phase-gate execution workflow. Always C→counsel→R→A→[F]→T→S; F runs only on a
+  Phase-gate execution workflow. Always D→C→counsel→R→A→[F]→T→S; F runs only on a
   blocking finding. Use /craft-hitl when Render contains a human-owned decision
   seam. Use /craft-lite to skip plan counsel and T.
 ---
 
 # CRAFTS Workflow
 
-Every run is `C → counsel → R → A → [F] → T → S`. There is no short path: no gate is skipped to save time, and none is reordered.
+Every run is `D → C → counsel → R → A → [F] → T → S`. There is no short path: no gate is skipped to save time, and none is reordered.
 
 `F` is bracketed because it is the one phase that runs on condition rather than on schedule — it exists to resolve blocking findings, so with none to resolve there is nothing for it to do. Skipping it for that reason is the protocol working; skipping any other gate is not.
 
@@ -46,7 +46,7 @@ At the start of the run, once. Infer `--kind` from the **user request**, not fro
 Do not invent extra kinds. Security is `security_triggers` on C, not a kind. HITL is `--mode hitl`, not a kind. Lite is `--mode lite`, not a kind.
 
 ```bash
-RUN=$(craft-metrics start --kind feature|bugfix|refactor|scaffold|docs|chore --mode full|hitl|lite --host pi|claude-code --cwd "$PWD" --craft-version 4)
+RUN=$(craft-metrics start --kind feature|bugfix|refactor|scaffold|docs|chore --mode full|hitl|lite --host pi|claude-code --cwd "$PWD" --craft-version 5)
 ```
 
 `--craft-version` is the `craft-version` field in this file's frontmatter — pass it verbatim, do not infer it. The workflow itself changes: phases merge, agents collapse, gates appear. Without the version, metrics from two different workflows average into a figure describing neither. This is not hypothetical — every `counsel` measurement on record came from the three-agent panel that v4 replaced with a single reviewer, and a blended average would have hidden that entirely.
@@ -56,7 +56,7 @@ Keep `$RUN` for the rest of the session. If `start` is missed, `craft-metrics cu
 At every gate:
 
 ```bash
-craft-metrics enter --run "$RUN" --phase C|counsel|R|A|F|T|S --agent <role-agent>
+craft-metrics enter --run "$RUN" --phase D|C|counsel|R|A|F|T|S [--agent <role-agent>]
 ```
 
 Omit `--agent` for S — the conductor performs Sharpen directly; there is no role agent to name.
@@ -64,6 +64,7 @@ Omit `--agent` for S — the conductor performs Sharpen directly; there is no ro
 Immediately after the phase report is in hand, before starting the next gate:
 
 ```bash
+craft-metrics exit --run "$RUN" --phase D --reason report|blocked [--blocked-detail-ref REF]
 craft-metrics exit --run "$RUN" --phase C --reason report --security-triggers a,b --blocking-questions N --afk-hitl-status afk --criteria-provenance provided|authored
 craft-metrics exit --run "$RUN" --phase counsel --reason report --counsel-status pass|blocked|needs-replan [--blocking-findings N] [--probe-required]
 craft-metrics exit --run "$RUN" --phase A --reason report --verdict pass|fail --blocking-findings N
@@ -94,6 +95,19 @@ craft-metrics end --run "$RUN" --outcome completed|aborted|blocked|hitl-paused
 A missed emit is recoverable (host still records usage as `unattributed` or via named `craft-*` agents). A fabricated cost figure is not. Skip metrics only if the `craft-metrics` binary is missing.
 
 ## Flow
+
+### D — Discovery
+
+Run `craft-discover` as a read-only evidence collection gate. The immutable packet is required before C starts. Discovery has no planning or scope authority.
+
+The D contract permits only two terminal results:
+
+- the versioned evidence packet (schema_version, base_commit, graph_status, authority and task sources, graph_candidates, verified_facts, evidence_gaps), or
+- a structured blocked result naming unresolved authority or evidence.
+
+Discovery must not plan, reinterpret canonical criteria, expand scope, or rebuild Graphify. Stale or unavailable graphs fall back to deterministic file search. Pass the immutable packet into C; do not rediscover.
+
+Omit `--agent` for D — the conductor runs `craft-discover` directly.
 
 ### C — Conceptualize
 

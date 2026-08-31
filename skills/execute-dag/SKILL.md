@@ -40,7 +40,7 @@ Parse from the invocation (skill args or the user message). Unknown flags are an
 Open a supervisor run before dispatching:
 
 ```bash
-RUN=$(craft-metrics start --kind scaffold --mode dag --host pi|claude-code --cwd "<meta.repo>" --craft-version 4)
+RUN=$(craft-metrics start --kind scaffold --mode dag --host pi|claude-code --cwd "<meta.repo>" --craft-version 5)
 ```
 
 `--craft-version` is the `craft-version` frontmatter field in `craft/SKILL.md`; pass it verbatim.

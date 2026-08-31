@@ -42,7 +42,7 @@ export interface OrchestrationFailure {
 export const HOSTS: Host[] = ["pi", "claude-code", "unknown"];
 export type PhaseName = "D" | "C" | "counsel" | "R" | "A" | "F" | "T" | "S" | "supervisor" | "unattributed";
 
-/** Caller-entered gates. D is metrics vocabulary only until a protocol activates Discovery. */
+/** Caller-entered gates. D is the versioned Discovery gate introduced in CRAFT v5. */
 export const GATEABLE_PHASES: PhaseName[] = ["D", "C", "counsel", "R", "A", "F", "T", "S"];
 /** Internal attribution buckets that callers cannot enter or exit. */
 export const DERIVED_PHASES: PhaseName[] = ["supervisor", "unattributed"];

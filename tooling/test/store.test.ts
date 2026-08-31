@@ -902,6 +902,19 @@ test("v3 is also inferred from a spawned simplifier or sharpener", () => {
 	}
 });
 
+test("v5 is inferred from an entered Discovery phase", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/v5", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "D");
+		s.enterPhase(run.run_id, "C", { agent: "craft-planner" });
+		assert.equal(s.get(run.run_id)!.craft_version, "5");
+		assert.equal(s.get(run.run_id)!.craft_version_source, "inferred");
+	} finally {
+		cleanup();
+	}
+});
+
 test("v4 is inferred from the merged counsel agent", () => {
 	const { store: s, cleanup } = tmpStore();
 	try {

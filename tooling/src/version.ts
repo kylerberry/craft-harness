@@ -21,7 +21,7 @@ export type VersionSource = "declared" | "inferred" | "unknown";
 
 /** Current toolkit version. Bump when a phase's shape changes: agents added or
  *  removed, duties moved between phases, gates introduced. Not for wording. */
-export const CURRENT_CRAFT_VERSION = "4";
+export const CURRENT_CRAFT_VERSION = "5";
 
 /**
  * Shape fingerprints, most recent first. Each entry lists agent-name fragments and
@@ -29,7 +29,14 @@ export const CURRENT_CRAFT_VERSION = "4";
  * these are agents that were removed outright, not renamed, so their presence dates
  * a run unambiguously.
  */
+const hasDiscovery = (run: Run) => run.phases.some((p) => p.name === "D");
+
 const SIGNATURES: Array<{ version: string; agents: string[]; structural: (run: Run) => boolean }> = [
+	{
+		version: "5",
+		agents: [],
+		structural: hasDiscovery,
+	},
 	{
 		version: "4",
 		// Single merged counsel reviewer; simplify and Sharpen folded into the
@@ -66,7 +73,10 @@ function agentText(run: Run): string {
  */
 export function inferCraftVersion(run: Run): string | undefined {
 	const text = agentText(run);
-	const matched = SIGNATURES.filter((s) => s.agents.some((a) => text.includes(a)) || s.structural(run));
+	const matched = SIGNATURES.filter((s) => {
+		if (s.version !== "5" && hasDiscovery(run)) return false;
+		return s.agents.some((a) => text.includes(a)) || s.structural(run);
+	});
 	// Signals from two revisions in one run means the fingerprints are wrong or the
 	// toolkit changed mid-run. Either way, refuse rather than pick.
 	if (matched.length !== 1) return undefined;

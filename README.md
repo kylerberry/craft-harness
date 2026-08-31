@@ -4,7 +4,8 @@ A personal-first, distributable CRAFTS toolkit for AI coding agents. It mirrors 
 
 ```mermaid
 flowchart LR
-    C["C — Conceptualize"] --> COUNSEL["craft-counsel: feasibility + coherence + scope (+ security when triggered)"]
+    D["D — Discovery"] --> C["C — Conceptualize"]
+    C --> COUNSEL["craft-counsel: feasibility + coherence + scope (+ security when triggered)"]
 
     COUNSEL --> GATE{"Blocking findings?"}
     GATE -- "yes" --> REVISE["C revises and dispositions"]
@@ -55,10 +56,11 @@ bin/link-global               # Author-machine live install
 
 CRAFTS is a sequential delivery workflow:
 
-`C → counsel → R → A → [F] → T → S`
+`D → C → counsel → R → A → [F] → T → S`
 
 | Phase | Role | Purpose |
 | --- | --- | --- |
+| **D**iscovery | `craft-discover` (conductor, no spawn) | Read-only evidence packet: authority, task sources, graph freshness; no planning or scope |
 | **C**onceptualize | `craft-planner` | Scope, acceptance criteria, tests, plan, and security triggers |
 | *Plan counsel* | `craft-counsel` (single reviewer, different model family from C) | Independent one-pass review of the C plan before Render: feasibility, coherence, scope, and security when triggered |
 | **R**ender | `craft-builder` | Test-first implementation, a required inline simplify pass (conductor, no spawn), and a decision record of choices the plan did not dictate |
@@ -69,9 +71,9 @@ CRAFTS is a sequential delivery workflow:
 
 | Command | Path | When |
 | --- | --- | --- |
-| `/craft` | `C → counsel → R → A → [F] → T → S` | Default. No gate skipped or reordered. |
+| `/craft` | `D → C → counsel → R → A → [F] → T → S` | Default. No gate skipped or reordered. |
 | `/craft-hitl` | Same as `/craft`, HITL Render | A `TODO(human)` seam is reserved. |
-| `/craft-lite` | `C → R → A → [F] → S` | Plan counsel and Tighten are out of scope (prototype, spike). |
+| `/craft-lite` | `D → C → R → A → [F] → S` | Plan counsel and Tighten are out of scope (prototype, spike). |
 
 Every protocol runs a required Render-exit simplify pass after tests go green (tests must stay green; unrecoverable simplify is reverted) — the conductor performs it directly, not as a separate agent spawn. `/craft-lite` skips plan counsel and Tighten and uses `--mode lite`, which the metrics store enforces by rejecting `counsel`/`T` phase entries under that mode.
 
