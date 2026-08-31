@@ -38,6 +38,28 @@ For triggered work, require the plan-security report and dispositioned blockers 
 
 # Output
 
-Return `tests`, `implementation_steps`, `files`, `verification`, `scope_guardrails`, `open_decisions`, and `blockers_or_handoff_notes` in a concise structured report.
+End every invocation with exactly one of two terminal shapes. Emit one fenced `guidance-report` or one fenced `blocked` report; there is no third shape or outcome.
 
-`open_decisions` names the choices the plan leaves genuinely open — where two defensible approaches exist and the plan picks neither. The conductor decides them and records what it chose; naming them up front is what stops a decision from being made silently.
+A `guidance-report` requires all of these fields: `tests`, `implementation_steps`, `files`, `verification`, `scope_guardrails`, `open_decisions`, and `blockers_or_handoff_notes`.
+
+```guidance-report
+tests: <failing tests to add or fixes to existing tests>
+implementation_steps: <smallest ordered implementation path>
+files: <affected files>
+verification: <proportionate commands>
+scope_guardrails: <explicit non-goals>
+open_decisions: <genuinely open choices, or none>
+blockers_or_handoff_notes: <notes, or none>
+```
+
+`open_decisions` names choices the plan leaves genuinely open — where two defensible approaches exist and the plan picks neither. The conductor decides them and records what it chose; naming them up front prevents a silent decision.
+
+When safe guidance is impossible, return `blocked` instead. It requires the exact missing plan evidence or undecided choice, whether a safe return-to-C handoff is `required` or `not-required`, and the reason for that classification.
+
+```blocked
+missing_evidence_or_decision: <exact absent evidence or decision>
+return_to_c: <required | not-required>
+handoff_reason: <why returning to C is or is not the safe next step>
+```
+
+A soft inspection warning means stop further discovery and finalize immediately from the evidence already gathered: emit `guidance-report` when that evidence is sufficient, otherwise emit `blocked` naming the exact gap.
