@@ -194,7 +194,7 @@ Agent frontmatter intentionally sets **no `model`** — with one deliberate exce
 
 Give every pin a `fallbackModels` chain (rate-limit and overload errors walk it automatically); keeping subscription-capped providers out of primary positions and fallback-only models in the chain degrades gracefully instead of failing the phase. Configured fallbacks retry the **same role** on provider or model timeout/failure. Conductors must not pick an ad hoc replacement model.
 
-Install the Pi role routes with `craft-routes --host pi --settings ~/.pi/agent/settings.json`. The helper merges into `subagents.agentOverrides`, preserves valid user-supplied routes and unrelated settings, and refuses overlapping families at C→counsel, R→A, and R→T. Claude Code is unsupported and fails explicitly rather than inventing routing.
+Install the Pi role routes with `craft-routes --host pi --settings ~/.pi/agent/settings.json`. Default fill leaves complete custom routes alone. `craft-routes --apply` replaces the five CRAFT roles and pins `node-conductor` to inherit from repo defaults. Unrelated settings stay. Overlapping families at C→counsel, R→A, or R→T are refused. Claude Code fails explicitly. Per-command API: `tooling/*/README.md`.
 
 ## Design principles
 

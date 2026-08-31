@@ -4,6 +4,10 @@ Protocol versions follow `craft-version` in `skills/craft/SKILL.md`. Bump when a
 
 ## [Unreleased]
 
+- `craft-routes --apply` replaces the five CRAFT role routes and pins `node-conductor` inherit; default fill still preserves complete custom routes.
+- Role defaults: C `sol→grok-4.6`, counsel `glm-5.3→kimi-k3`, R `glm-5.2→kimi-k2.7-code`, A `grok-4.6→sol`, T `terra→grok-4.3`.
+- Per-CLI API docs under `tooling/<tool>/README.md`.
+
 ## [5] — 2026-08-31
 
 Discovery is a real gate. Advisory phases must finish. Launch defects are not phase retries.

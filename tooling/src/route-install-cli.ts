@@ -3,7 +3,7 @@ import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { RouteError, SUPPORTED_HOST, installRoutes, type Settings } from "./route-install.ts";
 
-const USAGE = `Usage: craft-routes --host pi --settings PATH [--dry-run]
+const USAGE = `Usage: craft-routes --host pi --settings PATH [--apply] [--dry-run]
 `;
 
 function arg(flag: string, argv: string[]): string | undefined {
@@ -34,7 +34,7 @@ export function main(argv: string[]): number {
 		return 2;
 	}
 	try {
-		const { settings, changed } = installRoutes(parsed, host);
+		const { settings, changed } = installRoutes(parsed, host, { apply: argv.includes("--apply") });
 		if (!argv.includes("--dry-run")) writeFileSync(path, JSON.stringify(settings, null, 2) + "\n");
 		process.stdout.write(changed.length === 0 ? "unchanged\n" : `updated ${changed.join(",")}\n`);
 		return 0;

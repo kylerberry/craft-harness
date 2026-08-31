@@ -35,7 +35,7 @@ test("installer fills missing CRAFT role routes without touching unrelated setti
 });
 
 test("re-running is idempotent and preserves valid user-supplied routes", () => {
-	const custom: RoleRoute = { model: "openai-codex/gpt-5.6-sol", fallbackModels: ["moonshot/kimi-k3"] };
+	const custom: RoleRoute = { model: "openai-codex/gpt-5.6-sol", fallbackModels: ["xai/grok-4.3"] };
 	const once = installRoutes(
 		{ subagents: { agentOverrides: { "craft-planner": custom } } },
 		"pi",
@@ -44,6 +44,34 @@ test("re-running is idempotent and preserves valid user-supplied routes", () => 
 	const twice = installRoutes(once, "pi");
 	assert.deepEqual(twice.changed, []);
 	assert.deepEqual(twice.settings, once);
+});
+
+test("--apply replaces CRAFT role routes and pins node-conductor inherit", () => {
+	const before = {
+		theme: "dark",
+		packages: ["npm:pi-multi-account"],
+		subagents: {
+			modelScope: { enforce: true },
+			agentOverrides: {
+				"craft-planner": { model: "openai-codex/gpt-5.6-sol", fallbackModels: ["moonshot/kimi-k3"] },
+				"node-conductor": { model: "openai-codex/gpt-5.6-terra" },
+				"unrelated-agent": { model: "xai/grok-4.6" },
+			},
+		},
+	};
+	const { settings, changed } = installRoutes(before, "pi", { apply: true });
+	assert.equal(settings.theme, "dark");
+	assert.deepEqual(settings.packages, ["npm:pi-multi-account"]);
+	assert.deepEqual(settings.subagents?.modelScope, { enforce: true });
+	assert.deepEqual(settings.subagents?.agentOverrides?.["unrelated-agent"], { model: "xai/grok-4.6" });
+	assert.deepEqual(settings.subagents?.agentOverrides?.["node-conductor"], { model: "inherit" });
+	for (const role of PHASE_ROLES) {
+		assert.deepEqual(settings.subagents?.agentOverrides?.[role], DEFAULT_ROUTES[role]);
+	}
+	assert.ok(changed.includes("craft-planner"));
+	assert.ok(changed.includes("node-conductor"));
+	const again = installRoutes(settings, "pi", { apply: true });
+	assert.deepEqual(again.changed, []);
 });
 
 test("validation rejects overlapping families at C→counsel, R→A, and R→T", () => {

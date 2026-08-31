@@ -6,12 +6,14 @@ export type RoleRoute = {
 };
 
 export const DEFAULT_ROUTES: Record<string, RoleRoute> = {
-	"craft-planner": { model: "openai-codex/gpt-5.6-sol", fallbackModels: ["moonshot/kimi-k3"] },
-	"craft-counsel": { model: "zai/glm-5.3", fallbackModels: ["xai/grok-4.3"] },
+	"craft-planner": { model: "openai-codex/gpt-5.6-sol", fallbackModels: ["xai/grok-4.6"] },
+	"craft-counsel": { model: "zai/glm-5.3", fallbackModels: ["moonshot/kimi-k3"] },
 	"craft-builder": { model: "zai/glm-5.2", fallbackModels: ["moonshot/kimi-k2.7-code"] },
-	"craft-evaluator": { model: "xai/grok-4.6", fallbackModels: ["openai-codex/gpt-5.6-terra"] },
+	"craft-evaluator": { model: "xai/grok-4.6", fallbackModels: ["openai-codex/gpt-5.6-sol"] },
 	"craft-security-review": { model: "openai-codex/gpt-5.6-terra", fallbackModels: ["xai/grok-4.3"] },
 };
+
+export const CONDUCTOR_OVERRIDE = { model: "inherit" } as const;
 
 export const PHASE_ROLES = Object.keys(DEFAULT_ROUTES);
 
@@ -66,7 +68,16 @@ export interface Settings {
 	[key: string]: unknown;
 }
 
-export function installRoutes(settings: Settings, host: string): { settings: Settings; changed: string[] } {
+function sameRoute(a: unknown, b: RoleRoute): boolean {
+	if (!isCompleteRoute(a)) return false;
+	return a.model === b.model && a.fallbackModels.length === b.fallbackModels.length && a.fallbackModels.every((m, i) => m === b.fallbackModels[i]);
+}
+
+export function installRoutes(
+	settings: Settings,
+	host: string,
+	opts: { apply?: boolean } = {},
+): { settings: Settings; changed: string[] } {
 	if (host !== SUPPORTED_HOST) {
 		throw new RouteError(`unsupported host ${host}: only ${SUPPORTED_HOST} is supported`);
 	}
@@ -76,9 +87,15 @@ export function installRoutes(settings: Settings, host: string): { settings: Set
 	const changed: string[] = [];
 	for (const role of PHASE_ROLES) {
 		const existing = overrides[role];
-		if (isCompleteRoute(existing)) continue;
+		if (!opts.apply && isCompleteRoute(existing)) continue;
+		if (opts.apply && sameRoute(existing, DEFAULT_ROUTES[role])) continue;
 		overrides[role] = structuredClone(DEFAULT_ROUTES[role]);
 		changed.push(role);
+	}
+	const conductor = overrides["node-conductor"];
+	if (!conductor || typeof conductor !== "object" || (conductor as { model?: unknown }).model !== "inherit") {
+		overrides["node-conductor"] = { ...CONDUCTOR_OVERRIDE };
+		changed.push("node-conductor");
 	}
 	const roleRoutes = Object.fromEntries(PHASE_ROLES.map((role) => [role, overrides[role] as RoleRoute]));
 	validateSeams(roleRoutes);

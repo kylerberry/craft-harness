@@ -34,7 +34,7 @@ test("Discovery permits only the evidence packet or a structured blocked result"
 
 test("README, execute-dag, and metrics docs agree on D before C and version 5", () => {
 	const readme = read("README.md");
-	const tooling = read("tooling/README.md");
+	const tooling = read("tooling/metrics/README.md");
 	const execute = read("skills/execute-dag/SKILL.md");
 	assert.match(readme, /D → C → counsel → R → A → \[F\] → T → S/);
 	assert.match(readme, /`D → C → R → A → \[F\] → S`/);
