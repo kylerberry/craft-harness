@@ -19,6 +19,16 @@ test("node-conductor awaits one terminal result through subagent_wait", () => {
 	assert.match(source, /Claude Code[\s\S]*subagent_wait[\s\S]*unavailab/i);
 });
 
+test("node-conductor composes Discovery before C and slices the evidence packet", () => {
+	assert.match(source, /D before C|run deterministic D before C|Discovery before C/i);
+	assert.match(source, /craft-discover/);
+	assert.match(source, /structured blocked/);
+	assert.match(source, /packet slices|role-relevant/);
+	assert.match(source, /blocking-context/);
+	assert.match(source, /Render delta/);
+	assert.match(source, /inspect the final diff independently/i);
+});
+
 test("node-conductor separates launch defects from the one terminal phase retry", () => {
 	assert.match(source, /before.*phase|before.*enter/i);
 	assert.match(source, /launch receipt/i);
