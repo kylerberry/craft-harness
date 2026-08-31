@@ -12,7 +12,7 @@ import {
 	phaseTotalsByGroup,
 	type PhaseTotal,
 } from "./store.ts";
-import { HOSTS, KINDS, PHASES, type Host, type Kind, type Mode, type Outcome, type PhaseName } from "./schema.ts";
+import { GATEABLE_PHASES, HOSTS, KINDS, type Host, type Kind, type Mode, type Outcome, type PhaseName } from "./schema.ts";
 import type { PriceTable } from "./pricing.ts";
 
 /**
@@ -58,7 +58,7 @@ const USAGE = `craft-metrics — phase-grained CRAFT run collector
 
 Usage:
   craft-metrics start  --kind feature|bugfix|refactor|scaffold|docs|chore [--run ID] --mode full|hitl|lite|dag [--host pi|claude-code] [--cwd PATH] [--repo NAME] [--craft-version V]
-  craft-metrics enter  --run ID --phase C|counsel|R|A|F|T|S [--agent NAME]
+  craft-metrics enter  --run ID --phase D|C|counsel|R|A|F|T|S [--agent NAME]
   craft-metrics exit   --run ID --phase PHASE [--verdict V] [--blocking-findings N] [--p0 N] [--non-p0 N]
                        [--security-triggers a,b] [--counsel-status S] [--t-status S] [--docs-touched N]
                        [--blocking-questions N] [--afk-hitl-status S] [--criteria-provenance S] [--probe-required]
@@ -117,7 +117,7 @@ function requireArg(flag: string, argv: string[], io: Io): string {
 function parsePhase(argv: string[], io: Io): PhaseName {
 	const p = requireArg("--phase", argv, io);
 	// `unattributed` and `supervisor` are derived buckets, not gates a caller enters.
-	if (!PHASES.includes(p as PhaseName) || p === "unattributed") fail(io, `invalid --phase ${p}`);
+	if (!GATEABLE_PHASES.includes(p as PhaseName)) fail(io, `invalid --phase ${p}`);
 	return p as PhaseName;
 }
 

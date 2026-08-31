@@ -17,9 +17,13 @@ export const KINDS: Kind[] = ["feature", "bugfix", "refactor", "scaffold", "docs
  * that cannot be re-identified should be able to say so rather than keep a guess.
  */
 export const HOSTS: Host[] = ["pi", "claude-code", "unknown"];
-export type PhaseName = "C" | "counsel" | "R" | "A" | "F" | "T" | "S" | "supervisor" | "unattributed";
+export type PhaseName = "D" | "C" | "counsel" | "R" | "A" | "F" | "T" | "S" | "supervisor" | "unattributed";
 
-export const PHASES: PhaseName[] = ["C", "counsel", "R", "A", "F", "T", "S", "supervisor", "unattributed"];
+/** Caller-entered gates. D is metrics vocabulary only until a protocol activates Discovery. */
+export const GATEABLE_PHASES: PhaseName[] = ["D", "C", "counsel", "R", "A", "F", "T", "S"];
+/** Internal attribution buckets that callers cannot enter or exit. */
+export const DERIVED_PHASES: PhaseName[] = ["supervisor", "unattributed"];
+export const PHASES: PhaseName[] = [...GATEABLE_PHASES, ...DERIVED_PHASES];
 
 export const AGENT_PHASE: Record<string, PhaseName> = {
 	"craft-planner": "C",
