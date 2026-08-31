@@ -107,8 +107,8 @@ test("an invalid kind, mode, or phase exits 2 with a specific message", () => {
 		[["start", "--kind", "feature", "--mode", "wat"], /invalid --mode wat/],
 		[["enter", "--run", "x", "--phase", "wat"], /invalid --phase wat/],
 		// Derived buckets are not gates a caller may enter or exit.
-		[["enter", "--run", "x", "--phase", "supervisor"], /invalid --phase supervisor/],
-		[["enter", "--run", "x", "--phase", "unattributed"], /invalid --phase unattributed/],
+		[["enter", "--run", "x", "--phase", "supervisor"], /invalid --phase supervisor/],		[["exit", "--run", "x", "--phase", "C", "--reason", "wat"], /invalid --reason wat/],
+		// Derived buckets are not gates a caller may enter.		[["enter", "--run", "x", "--phase", "unattributed"], /invalid --phase unattributed/],
 		[["exit", "--run", "x", "--phase", "supervisor"], /invalid --phase supervisor/],
 		[["exit", "--run", "x", "--phase", "unattributed"], /invalid --phase unattributed/],
 		// Host decides which population a run is compared within, so a near-miss
@@ -143,12 +143,71 @@ test("enter and exit round-trip a phase with its fields", () => {
 		const id = h.out().trim();
 		assert.equal(main(["enter", "--run", id, "--phase", "C", "--agent", "craft-planner"], h.io), 0);
 		assert.equal(
-			main(["exit", "--run", id, "--phase", "C", "--security-triggers", "untrusted-input,secrets-sensitive-data", "--blocking-questions", "2"], h.io),
+			main([
+				"exit",
+				"--run",
+				id,
+				"--phase",
+				"C",
+				"--reason",
+				"report",
+				"--security-triggers",
+				"untrusted-input,secrets-sensitive-data",
+				"--blocking-questions",
+				"2",
+			], h.io),
 			0,
 		);
 		const exit = h.events().find((e) => e.t === "phase_exit");
 		assert.deepEqual(exit.fields.security_triggers, ["untrusted-input", "secrets-sensitive-data"]);
 		assert.equal(exit.fields.blocking_questions, 2);
+		assert.equal(exit.fields.terminal_reason, "report");
+	} finally {
+		h.cleanup();
+	}
+});
+
+test("blocked and timeout exits require and persist a bounded detail reference", () => {
+	for (const reason of ["blocked", "timeout"]) {
+		const h = harness();
+		try {
+			main(["start", "--kind", "feature", "--mode", "lite"], h.io);
+			const id = h.out().trim();
+			main(["enter", "--run", id, "--phase", "R"], h.io);
+			assert.equal(run(["exit", "--run", id, "--phase", "R", "--reason", reason], h.io), 2);
+			assert.match(h.err(), /requires --blocked-detail-ref/);
+			assert.equal(h.events().filter((event) => event.t === "phase_exit").length, 0);
+			assert.equal(
+				main([
+					"exit",
+					"--run",
+					id,
+					"--phase",
+					"R",
+					"--reason",
+					reason,
+					"--blocked-detail-ref",
+					" artifact:missing-verification ",
+				], h.io),
+				0,
+			);
+			const exit = h.events().find((event) => event.t === "phase_exit");
+			assert.equal(exit.fields.terminal_reason, reason);
+			assert.equal(exit.fields.blocked_detail_ref, "artifact:missing-verification");
+		} finally {
+			h.cleanup();
+		}
+	}
+});
+
+test("exit requires an explicit terminal reason", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "feature", "--mode", "lite"], h.io);
+		const id = h.out().trim();
+		assert.equal(run(["exit", "--run", id, "--phase", "C"], h.io), 2);
+		assert.match(h.err(), /missing --reason/);
+		assert.equal(h.events().filter((event) => event.t === "phase_exit").length, 0);
 	} finally {
 		h.cleanup();
 	}
@@ -218,7 +277,7 @@ test("an empty --security-triggers yields an empty list, not a list of one empty
 		main(["start", "--kind", "feature", "--mode", "full"], h.io);
 		const id = h.out().trim();
 		main(["enter", "--run", id, "--phase", "C"], h.io);
-		main(["exit", "--run", id, "--phase", "C", "--security-triggers", ""], h.io);
+		main(["exit", "--run", id, "--phase", "C", "--reason", "report", "--security-triggers", ""], h.io);
 		assert.deepEqual(h.events().find((e) => e.t === "phase_exit").fields.security_triggers, []);
 	} finally {
 		h.cleanup();
@@ -270,7 +329,7 @@ test("A cannot exit with a pass verdict while verification is red", () => {
 		const id = h.out().trim();
 		main(["enter", "--run", id, "--phase", "A"], h.io);
 		main(["verify", "--run", id, "--command", "npm test", "--exit-code", "1"], h.io);
-		assert.equal(run(["exit", "--run", id, "--phase", "A", "--verdict", "pass"], h.io), 2);
+		assert.equal(run(["exit", "--run", id, "--phase", "A", "--reason", "report", "--verdict", "pass"], h.io), 2);
 		assert.match(h.err(), /verification is red/);
 	} finally {
 		h.cleanup();
@@ -444,7 +503,7 @@ test("doctor fails a C phase with tool activity but zero usage", () => {
 		const id = h.out().trim();
 		main(["enter", "--run", id, "--phase", "C"], h.io);
 		main(["usage", "--run", id, "--tool", "read"], h.io);
-		main(["exit", "--run", id, "--phase", "C"], h.io);
+		main(["exit", "--run", id, "--phase", "C", "--reason", "report"], h.io);
 		main(["end", "--run", id, "--outcome", "completed"], h.io);
 
 		assert.equal(main(["doctor"], h.io), 1);
@@ -537,7 +596,7 @@ test("D round-trips and stamped usage appears in show and totals", () => {
 		const id = h.out().trim();
 		assert.equal(main(["enter", "--run", id, "--phase", "D"], h.io), 0);
 		assert.equal(main(["usage", "--run", id, "--phase", "D", "--cost", "0.25", "--input", "100", "--turns", "2"], h.io), 0);
-		assert.equal(main(["exit", "--run", id, "--phase", "D"], h.io), 0);
+		assert.equal(main(["exit", "--run", id, "--phase", "D", "--reason", "report"], h.io), 0);
 
 		const events = h.events();
 		assert.ok(events.some((e) => e.t === "phase_enter" && e.phase === "D"));

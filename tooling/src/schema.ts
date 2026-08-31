@@ -10,6 +10,7 @@ export type Host = "pi" | "claude-code" | "unknown";
 export type Mode = "full" | "hitl" | "lite" | "dag";
 export type Kind = "feature" | "bugfix" | "refactor" | "scaffold" | "docs" | "chore";
 export type Outcome = "open" | "completed" | "aborted" | "blocked" | "hitl-paused";
+export type TerminalReason = "report" | "blocked" | "timeout";
 
 export const KINDS: Kind[] = ["feature", "bugfix", "refactor", "scaffold", "docs", "chore"];
 
@@ -21,8 +22,8 @@ export interface PhaseIntervention {
 	kind: InterventionKind;
 	observed_turns: number;
 	observed_tools: number;
-}
-/**
+}export const TERMINAL_REASONS: TerminalReason[] = ["report", "blocked", "timeout"];
+export const BLOCKED_DETAIL_REF_MAX = 256;/**
  * `unknown` is accepted as a correction target on purpose: a run mislabelled `pi`
  * that cannot be re-identified should be able to say so rather than keep a guess.
  */
@@ -108,6 +109,10 @@ export interface PhaseRecord {
 	/** Verify commands run while this phase was open, and how many came back red. */
 	verify_runs: number;
 	verify_failures: number;
+	/** Reason supplied by the most recent explicit phase exit. */
+	terminal_reason?: TerminalReason;
+	/** Bounded pointer to missing evidence or a pending decision for blocked exits. */
+	blocked_detail_ref?: string;
 	security_triggers?: string[];
 	blocking_questions?: number;
 	afk_hitl_status?: string;
@@ -215,6 +220,8 @@ export interface Run {
 }
 
 export interface PhaseExitFields {
+	terminal_reason?: TerminalReason;
+	blocked_detail_ref?: string;
 	security_triggers?: string[];
 	blocking_questions?: number;
 	afk_hitl_status?: string;

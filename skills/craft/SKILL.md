@@ -64,14 +64,16 @@ Omit `--agent` for S — the conductor performs Sharpen directly; there is no ro
 Immediately after the phase report is in hand, before starting the next gate:
 
 ```bash
-craft-metrics exit --run "$RUN" --phase C --security-triggers a,b --blocking-questions N --afk-hitl-status afk --criteria-provenance provided|authored
-craft-metrics exit --run "$RUN" --phase counsel --counsel-status pass|blocked|needs-replan [--blocking-findings N] [--probe-required]
-craft-metrics exit --run "$RUN" --phase A --verdict pass|fail --blocking-findings N
-craft-metrics exit --run "$RUN" --phase T --t-status pass|fail --p0 N --non-p0 N
-craft-metrics exit --run "$RUN" --phase S --docs-touched N
-# R and F: exit with no extra fields. F only appears when it ran — a clean A
+craft-metrics exit --run "$RUN" --phase C --reason report --security-triggers a,b --blocking-questions N --afk-hitl-status afk --criteria-provenance provided|authored
+craft-metrics exit --run "$RUN" --phase counsel --reason report --counsel-status pass|blocked|needs-replan [--blocking-findings N] [--probe-required]
+craft-metrics exit --run "$RUN" --phase A --reason report --verdict pass|fail --blocking-findings N
+craft-metrics exit --run "$RUN" --phase T --reason report --t-status pass|fail --p0 N --non-p0 N
+craft-metrics exit --run "$RUN" --phase S --reason report --docs-touched N
+# R and F: exit with --reason report and no phase-specific fields. F only appears when it ran — a clean A
 # means no F gate at all, not an F gate with nothing recorded.
 ```
+
+Every explicit exit requires `--reason report|blocked|timeout`. For `blocked` and `timeout`, also pass `--blocked-detail-ref REF`: a single-line, at-most-256-character pointer to the missing evidence or pending decision. A timeout closes the phase explicitly; do not leave the phase open and rely on absence to imply timeout.
 
 Whenever the verification command runs — in R, after a fix in F, and after each DAG merge — record its real exit code:
 
@@ -175,7 +177,7 @@ Step 6 diffs against it. Capture it first — a DAG conductor commits as it goes
    Write these in neutral voice — "chose X over Y because Z", never "I decided". They go to a blinded reviewer, and first-person phrasing is an authorship signal the scrubber cannot remove.
 
    ```bash
-   craft-metrics exit --run "$RUN" --phase R --decisions N --plan-deviations N \
+   craft-metrics exit --run "$RUN" --phase R --reason report --decisions N --plan-deviations N \
      --mutants-tested N --mutants-survived N
    ```
 

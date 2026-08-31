@@ -88,6 +88,22 @@ test("summarize renders phase intervention details only when present", () => {
 	}
 });
 
+test("summarize renders blocked and timeout terminal artifacts", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const blocked = s.openRun({ host: "pi", cwd: "/tmp/blocked", mode: "lite" });
+		s.enterPhase(blocked.run_id, "C");
+		s.exitPhase(blocked.run_id, "C", { terminal_reason: "blocked", blocked_detail_ref: "decision:scope-owner" });
+		const timedOut = s.openRun({ host: "pi", cwd: "/tmp/timeout", mode: "lite" });
+		s.enterPhase(timedOut.run_id, "R");
+		s.exitPhase(timedOut.run_id, "R", { terminal_reason: "timeout", blocked_detail_ref: "evidence:test-log" });
+		const text = summarize(s.loadAll());
+		assert.match(text, /exit blocked: decision:scope-owner/);
+		assert.match(text, /exit timeout: evidence:test-log/);	} finally {
+		cleanup();
+	}
+});
+
 test("an inferred version is marked, a declared one is not", () => {
 	const { store: s, cleanup } = tmpStore();
 	try {
