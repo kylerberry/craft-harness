@@ -154,6 +154,64 @@ test("enter and exit round-trip a phase with its fields", () => {
 	}
 });
 
+test("intervene records a finalization request and show exposes its observations", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "chore", "--mode", "lite"], h.io);
+		const id = h.out().trim();
+		main(["enter", "--run", id, "--phase", "R"], h.io);
+		assert.equal(
+			main([
+				"intervene", "--run", id, "--phase", "R", "--kind", "finalization-request",
+				"--observed-turns", "8", "--observed-tools", "3",
+			], h.io),
+			0,
+		);
+		const event = h.events().find((e) => e.t === "phase_intervention");
+		assert.equal(event.phase, "R");
+		assert.equal(event.kind, "finalization-request");
+		assert.equal(event.observed_turns, 8);
+		assert.equal(event.observed_tools, 3);
+		assert.match(event.at, /^\d{4}-\d{2}-\d{2}T/);
+		main(["show", "--run", id], h.io);
+		assert.match(h.out(), /finalization-request.*8t \/ 3tools/);
+	} finally {
+		h.cleanup();
+	}
+});
+
+test("intervene rejects invalid kinds, observations, and closed phases", () => {
+	for (const [tail, expected] of [
+		[["--kind", "wat", "--observed-turns", "1", "--observed-tools", "1"], /invalid --kind wat/],
+		[["--kind", "finalization-request", "--observed-turns", "-1", "--observed-tools", "1"], /invalid --observed-turns/],
+		[["--kind", "finalization-request", "--observed-turns", "1", "--observed-tools", "1.5"], /invalid --observed-tools/],
+	] as Array<[string[], RegExp]>) {
+		const h = harness();
+		try {
+			main(["start", "--kind", "chore", "--mode", "lite"], h.io);
+			const id = h.out().trim();
+			main(["enter", "--run", id, "--phase", "R"], h.io);
+			assert.equal(run(["intervene", "--run", id, "--phase", "R", ...tail], h.io), 2);
+			assert.match(h.err(), expected);
+		} finally {
+			h.cleanup();
+		}
+	}
+
+	const h = harness();
+	try {
+		main(["start", "--kind", "chore", "--mode", "lite"], h.io);
+		const id = h.out().trim();
+		assert.equal(run([
+			"intervene", "--run", id, "--phase", "R", "--kind", "finalization-request",
+			"--observed-turns", "1", "--observed-tools", "1",
+		], h.io), 2);
+		assert.match(h.err(), /phase R is not open/);
+	} finally {
+		h.cleanup();
+	}
+});
+
 test("an empty --security-triggers yields an empty list, not a list of one empty string", () => {
 	const h = harness();
 	try {

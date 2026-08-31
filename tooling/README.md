@@ -100,6 +100,16 @@ craft-metrics end   --run "$RUN" --outcome completed
 
 Do not invent tokens or cost in the skill. The host adapter stamps those.
 
+A conductor can record a bounded finalization request against the currently open phase:
+
+```bash
+craft-metrics intervene --run "$RUN" --phase C --kind finalization-request \
+  --observed-turns 12 --observed-tools 20
+```
+
+This append-only control event records the observed limits and timestamp. It is not model
+usage and does not change phase cycles, turns, tool calls, timeouts, or failovers.
+
 ## Show
 
 ```bash

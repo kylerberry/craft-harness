@@ -12,6 +12,16 @@ export type Kind = "feature" | "bugfix" | "refactor" | "scaffold" | "docs" | "ch
 export type Outcome = "open" | "completed" | "aborted" | "blocked" | "hitl-paused";
 
 export const KINDS: Kind[] = ["feature", "bugfix", "refactor", "scaffold", "docs", "chore"];
+
+export type InterventionKind = "finalization-request";
+export const INTERVENTION_KINDS: InterventionKind[] = ["finalization-request"];
+
+export interface PhaseIntervention {
+	at: string;
+	kind: InterventionKind;
+	observed_turns: number;
+	observed_tools: number;
+}
 /**
  * `unknown` is accepted as a correction target on purpose: a run mislabelled `pi`
  * that cannot be re-identified should be able to say so rather than keep a guess.
@@ -142,6 +152,9 @@ export interface PhaseRecord {
 	 */
 	mutants_tested?: number;
 	mutants_survived?: number;
+	/** Conductor control interventions, recorded separately from model usage. */
+	intervention_count?: number;
+	interventions?: PhaseIntervention[];
 }
 
 export interface Seams {
