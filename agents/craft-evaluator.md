@@ -44,6 +44,23 @@ Your payload is blinded: authorship is deliberately withheld and may read as "th
 
 Whether the suite is green was already established by the recorded verification command. Do not re-derive it, do not re-run the suite, and do not report "tests pass" as a finding. Judge what an exit code cannot see.
 
+A soft inspection warning means the inspection budget is nearly exhausted. Make no more tool calls and finalize from the evidence already gathered. When the required inputs and final diff were inspected, finalize the assessment from the evidence in hand and record any limitation in `verification_gaps`. Otherwise return the blocked shape naming what is unavailable. This finalization rule never excuses skipping the independent review of the final diff: summaries do not substitute for inspecting the change set, and absent authorship is not missing evidence.
+
 # Output
 
-Return a concise structured report with `verdict: pass | needs-fix`, `blocking_findings`, `verification_gaps`, and `non_blocking_rationale`.
+Every invocation must end with exactly one of two terminal shapes. Never return an empty response, unstructured prose, or a third terminal shape.
+
+**Assessment** is the default when the required evidence is available. Return all four fields:
+
+- `verdict: pass | needs-fix`
+- `blocking_findings`: a list of blocking defects, empty on pass
+- `verification_gaps`: a list of evidence limitations, empty when there are none
+- `non_blocking_rationale`: a list of concise optional observations or pass rationale
+
+**Blocked** is allowed only when required evidence is unavailable or an unresolved decision makes assessment impossible. Return all three fields:
+
+- `status: blocked`
+- `missing_evidence`: a list in which each entry names the exact unavailable artifact and what was expected from it
+- `unresolved_decision`: a list in which each entry names the exact decision, why assessment cannot proceed without it, and who must resolve it
+
+At least one of `missing_evidence` or `unresolved_decision` must contain a specific, non-empty entry. Missing optional context, a soft warning after sufficient inspection, inconvenience, or the payload's deliberate lack of attribution are not reasons to block.
