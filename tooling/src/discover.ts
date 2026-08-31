@@ -20,7 +20,7 @@ export interface EvidencePacket {
 	graph_status: "current" | "stale" | "unavailable";
 	authority_sources: Array<{ path: string; lines: string }>;
 	task_sources: Array<{ path: string; lines: string; content_hash: string }>;
-	graph_candidates: Array<{ path: string; reason: string }>;
+	graph_candidates: Array<{ path: string; reason: string; source_location: string }>;
 	verified_facts: Array<{ fact: string; source: string }>;
 	evidence_gaps: string[];
 }
@@ -37,19 +37,36 @@ function checkedFile(root: string, path: string): string {
 }
 
 /** Classify graph.json against the current revision. Never spawn or rebuild Graphify. */
-function graphEvidence(root: string, commit: string): Pick<EvidencePacket, "graph_status" | "graph_candidates"> {
+function graphEvidence(
+	root: string,
+	commit: string,
+	taskPaths: string[],
+	taskText: string,
+): Pick<EvidencePacket, "graph_status" | "graph_candidates"> {
 	const graph = join(root, "graphify-out", "graph.json");
 	if (!existsSync(graph)) return { graph_status: "unavailable", graph_candidates: [] };
 	try {
 		const parsed = JSON.parse(readFileSync(graph, "utf8"));
 		const current = parsed.base_commit === commit || parsed.commit === commit || parsed.revision === commit;
 		if (!current) return { graph_status: "stale", graph_candidates: [] };
-		const candidates = Array.isArray(parsed.graph_candidates) ? parsed.graph_candidates : Array.isArray(parsed.candidates) ? parsed.candidates : [];
+		const raw = Array.isArray(parsed.graph_candidates) ? parsed.graph_candidates : Array.isArray(parsed.candidates) ? parsed.candidates : [];
+		const haystack = `${taskPaths.join("\n")}\n${taskText}`.toLowerCase();
 		return {
 			graph_status: "current",
-			graph_candidates: candidates
-				.filter((item: unknown): item is { path: string; reason: string } => !!item && typeof (item as any).path === "string" && typeof (item as any).reason === "string")
-				.map((item: { path: string; reason: string }) => ({ path: item.path, reason: item.reason }))
+			graph_candidates: raw
+				.flatMap((item: unknown) => {
+					if (!item || typeof (item as { path?: unknown }).path !== "string" || typeof (item as { reason?: unknown }).reason !== "string") return [];
+					const path = (item as { path: string }).path;
+					const reason = (item as { reason: string }).reason;
+					const source_location =
+						typeof (item as { source_location?: unknown }).source_location === "string"
+							? (item as { source_location: string }).source_location
+							: typeof (item as { source?: unknown }).source === "string"
+								? (item as { source: string }).source
+								: path;
+					const grounded = taskPaths.includes(path) || haystack.includes(path.toLowerCase()) || haystack.includes(path.split("/").pop()!.toLowerCase());
+					return grounded ? [{ path, reason, source_location }] : [];
+				})
 				.sort((a: { path: string; reason: string }, b: { path: string; reason: string }) => a.path.localeCompare(b.path) || a.reason.localeCompare(b.reason)),
 		};
 	} catch { return { graph_status: "stale", graph_candidates: [] }; }
@@ -111,7 +128,12 @@ export function collectEvidence(rootInput: string, commit: string, taskInputs: s
 		} catch { gaps.push(`unsupported fact: ${claim} at ${citation}`); }
 	}
 
-	const graph = graphEvidence(root, commit);
+	const graph = graphEvidence(
+		root,
+		commit,
+		tasks.map((task) => task.path),
+		tasks.map((task) => readFileSync(checkedFile(root, resolve(root, task.path)), "utf8")).join("\n"),
+	);
 	const packet: EvidencePacket = {
 		schema_version: 1,
 		base_commit: commit,
@@ -141,7 +163,7 @@ export function serializeEvidence(packet: EvidencePacket): string {
 	};
 	objectList("authority_sources", packet.authority_sources, ["path", "lines"]);
 	objectList("task_sources", packet.task_sources, ["path", "lines", "content_hash"]);
-	objectList("graph_candidates", packet.graph_candidates, ["path", "reason"]);
+	objectList("graph_candidates", packet.graph_candidates, ["path", "reason", "source_location"]);
 	objectList("verified_facts", packet.verified_facts, ["fact", "source"]);
 	lines.push("evidence_gaps:" + (packet.evidence_gaps.length ? "" : " []"));
 	for (const gap of packet.evidence_gaps) lines.push(`  - ${q(gap)}`);

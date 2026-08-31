@@ -108,6 +108,32 @@ test("records exactly one graph_status and does not rebuild Graphify", () => {
 	}
 });
 
+test("records current Graphify candidates with source locations and never promotes them to facts", () => {
+	const root = fixture();
+	try {
+		const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+		mkdirSync(join(root, "graphify-out"), { recursive: true });
+		writeFileSync(
+			join(root, "graphify-out", "graph.json"),
+			JSON.stringify({
+				commit: head,
+				candidates: [
+					{ path: "pkg/sub/task.txt", reason: "task vocabulary", source_location: "pkg/sub/task.txt:1" },
+					{ path: "unrelated.ts", reason: "noise", source_location: "unrelated.ts:9" },
+				],
+				facts: [{ fact: "the supported fact", source: "pkg/sub/task.txt:1" }],
+			}),
+		);
+		const yaml = packet(run(root, ["--task-source", "pkg/sub/task.txt"]));
+		assert.match(yaml, /^graph_status: current$/m);
+		assert.match(yaml, /path: "pkg\/sub\/task.txt"[\s\S]*reason: "task vocabulary"[\s\S]*source_location: "pkg\/sub\/task.txt:1"/);
+		assert.doesNotMatch(yaml, /unrelated\.ts/);
+		assert.doesNotMatch(yaml, /verified_facts:[\s\S]*the supported fact/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("rejects secrets before writing a packet and leaves no file", () => {
 	const root = fixture();
 	try {
