@@ -781,6 +781,7 @@ export interface Complaint {
 		| "unattributed"
 		| "unverified-pass"
 		| "fix-without-findings"
+		| "phase-usage-missing"
 		| "unknown-host";
 	run_id?: string;
 	detail: string;
@@ -867,6 +868,15 @@ export function diagnose(runs: Run[], now = Date.now(), staleHours = 12): Compla
 			}
 		}
 		for (const p of run.phases) {
+			const tokens = totalTokens(p.tokens);
+			if ((p.cycles ?? 0) > 0 && (p.tool_calls > 0 || p.subagent_count > 0) && p.turns === 0 && tokens === 0) {
+				out.push({
+					kind: "phase-usage-missing",
+					run_id: run.run_id,
+					detail: `${run.repo ?? run.cwd}: phase ${p.name} recorded ${p.tool_calls} tool calls, ${p.subagent_count} subagents, ${p.turns} turns, and ${tokens} tokens`,
+					cost_usd: p.notional_cost_usd ?? p.cost_usd,
+				});
+			}
 			for (const [model, spend] of Object.entries(p.by_model)) {
 				const spent = totalTokens(spend.tokens);
 				// A model that burned tokens but reported $0 has no price table entry
