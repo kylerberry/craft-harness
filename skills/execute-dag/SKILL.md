@@ -63,6 +63,8 @@ The supervisor creates every node worktree before dispatch. Never use the subage
 - Command shape: `git worktree add -b <branch> <path> <base-head>`.
 - Refuse dispatch if the path or branch already exists unexpectedly; report it instead of deleting or reusing it.
 
+Write each node task/evidence packet with `writeNodePackets` (OS temporary directory). Pass only packet **paths** and bounded plain metadata into the static script `tooling/src/dag-workflow.static.js`. Never interpolate node intent, criteria, or other arbitrary text into JavaScript source. Packets exclude secrets. Delete packets when the DAG is terminal and successful; retain them when a node is blocked or failed.
+
 ```
 runs.run(`node-${id}`, {
   agent: "node-conductor",
@@ -70,8 +72,7 @@ runs.run(`node-${id}`, {
   cwd: <meta.repo>/tmp/worktree-<id>,
   worktree: false,
   skill: <protocol>,
-  task: <node payload: protocol, id, intent, change_spec, acceptance_criteria verbatim,
-         base branch, and "commit changes; report branch + worktree path + files + evidence on completion">
+  task: <path to the node packet under the OS temp dir>
 })
 ```
 
