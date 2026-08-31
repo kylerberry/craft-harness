@@ -42,8 +42,9 @@ If `protocol` is missing or unknown, return `BLOCKED` with evidence. Do not inve
 
 - A node whose plan is unclear or whose boundary proves wrong returns `BLOCKED` with evidence; do not improvise scope or topology.
 - Do not edit files outside your node's declared scope. Discovered work is reported, never implemented.
-- Do not resolve model failures by switching models; report the failure in your result.
-- One retry of your own node's failed phase is allowed within the protocol's rules; anything beyond that returns `BLOCKED`.
+- Validate and dispatch a phase child **before** `craft-metrics enter`. Enter the phase only after a launch receipt. Await that child's one terminal result. A validation, parse, or dispatch defect is an orchestration failure: record it, do not enter the phase, and do not consume the phase retry. After correcting the defect, relaunch; a later successful launch still produces one entry and one awaited terminal result.
+- Timeout or model failure retries only the same role through its host-configured fallback chain. Do not select, invent, or pass a model id.
+- One retry of your own node's **terminal** phase failure is allowed within the protocol's rules; launch defects are not that retry. Anything beyond that returns `BLOCKED`.
 
 # Result report
 

@@ -19,6 +19,15 @@ test("node-conductor awaits one terminal result through subagent_wait", () => {
 	assert.match(source, /Claude Code[\s\S]*subagent_wait[\s\S]*unavailab/i);
 });
 
+test("node-conductor separates launch defects from the one terminal phase retry", () => {
+	assert.match(source, /before.*phase|before.*enter/i);
+	assert.match(source, /launch receipt/i);
+	assert.match(source, /host-configured fallback chain/i);
+	assert.match(source, /Do not select, invent, or pass a model id/);
+	assert.match(source, /terminal.*phase failure/i);
+	assert.match(source, /launch defects are not that retry/i);
+});
+
 test("the generated Claude Code definition stays valid without subagent_wait", () => {
 	const ported = portAgent(source);
 	assert.equal(ported.name, "node-conductor");
