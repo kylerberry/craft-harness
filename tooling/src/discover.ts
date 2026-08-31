@@ -36,6 +36,7 @@ function checkedFile(root: string, path: string): string {
 	return resolved;
 }
 
+/** Classify graph.json against the current revision. Never spawn or rebuild Graphify. */
 function graphEvidence(root: string, commit: string): Pick<EvidencePacket, "graph_status" | "graph_candidates"> {
 	const graph = join(root, "graphify-out", "graph.json");
 	if (!existsSync(graph)) return { graph_status: "unavailable", graph_candidates: [] };
