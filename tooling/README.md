@@ -100,6 +100,16 @@ craft-metrics end   --run "$RUN" --outcome completed
 
 Do not invent tokens or cost in the skill. The host adapter stamps those.
 
+Workflow validation, packet parsing, and dispatch defects belong to the run rather than a phase attempt:
+
+```bash
+craft-metrics orchestration-failure --run "$RUN" --kind validation --evidence "unknown dependency"
+```
+
+Kinds are `validation`, `parse`, or `dispatch`. Evidence must be non-empty, single-line,
+control-free, and at most 1,024 UTF-8 bytes. Recording this event never enters or exits a
+phase and does not change phase entries, cycles, or retry counts.
+
 ## Show
 
 ```bash
@@ -177,3 +187,5 @@ being wrong. `doctor` reports:
   tokens instead
 - **unattributed** — share of total spend that landed outside any phase
 - **unknown-host** — a run that names no harness, so it compares against nothing
+- **orchestration-failure** — a bounded run-level validation, parse, or dispatch defect;
+  reported separately from phase failures

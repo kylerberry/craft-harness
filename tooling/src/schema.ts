@@ -12,6 +12,15 @@ export type Kind = "feature" | "bugfix" | "refactor" | "scaffold" | "docs" | "ch
 export type Outcome = "open" | "completed" | "aborted" | "blocked" | "hitl-paused";
 
 export const KINDS: Kind[] = ["feature", "bugfix", "refactor", "scaffold", "docs", "chore"];
+export type OrchestrationFailureKind = "validation" | "parse" | "dispatch";
+export const ORCHESTRATION_FAILURE_KINDS: OrchestrationFailureKind[] = ["validation", "parse", "dispatch"];
+export const ORCHESTRATION_EVIDENCE_MAX_BYTES = 1024;
+
+export interface OrchestrationFailure {
+	kind: OrchestrationFailureKind;
+	evidence: string;
+	at: string;
+}
 /**
  * `unknown` is accepted as a correction target on purpose: a run mislabelled `pi`
  * that cannot be re-identified should be able to say so rather than keep a guess.
@@ -182,6 +191,8 @@ export interface Run {
 	open_phase: PhaseName | null;
 	/** Number of phase_enter events seen. Zero means the run was started but never gated. */
 	phase_entries: number;
+	/** Run-level workflow defects, intentionally outside all phase attempts. */
+	orchestration_failures: OrchestrationFailure[];
 	/** Last phase to close, and when — the anchor for grace-window backfill. */
 	last_closed_phase: PhaseName | null;
 	last_closed_at: string | null;
