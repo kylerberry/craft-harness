@@ -3,12 +3,96 @@
 Explored but not built. Each entry records the reasoning and the open questions so the
 decision can be resumed without re-deriving it.
 
-> **Every measurement on this page is CRAFTS v3 data.** v4 — single merged counsel,
-> inline simplify and Sharpen, blinded reviewers, the verify gate, the R decision
-> record — has produced **zero** recorded runs. `craft-metrics totals` confirms: 26
-> v3 runs carry all the cost, v4 none. Directions are probably robust (A's turn count
-> dwarfs every other phase by a wide margin), magnitudes will move. Re-measure before
-> acting on any specific figure here.
+> **Every measurement on this page is CRAFTS v3 data, and still is.** Two runs now
+> carry a v4 label and neither is a clean baseline. `a5469442` opened under v3, ran a
+> full `craft-plan-feasibility` counsel and a C→counsel→R→A prefix, then declared
+> version 4 mid-run — a v3 workflow's cost sits inside the v4 totals, which is exactly
+> the failure the version-bump entry below predicted. `edabc620` entered C twice,
+> never exited, and recorded zero turns, zero tool calls, and zero tokens.
+>
+> So: v4 — single merged counsel, inline simplify and Sharpen, blinded reviewers, the
+> verify gate, the R decision record — still has no uncontaminated measurement.
+> Directions are probably robust (A's turn count dwarfs every other phase by a wide
+> margin, and the hybrid run puts A at 77% rather than 61%), magnitudes will move.
+> Re-measure before acting on any specific figure here.
+>
+> Where a v4 figure is cited below it comes from `a5469442` and is marked as such.
+> Its wall-clock is unusable — every phase reads ~512,000s because HITL pauses count
+> toward phase duration.
+
+---
+
+## Phases that never terminate
+
+**Status:** open bug with a recorded instance · cheapest fix on this page
+
+`edabc620` — v4, `full`, feature — recorded two `phase_enter C` events and no
+`phase_exit`, ever. The run closed `blocked` after 193.4s having produced no plan. A
+read-only planner holding `read`/`grep`/`find` kept crawling documentation and never
+returned; two explicit finalization steers did not land, and the permitted retry failed
+the same way under a narrower scope.
+
+The protocol's guarantee held — the conductor stopped rather than starting R without a
+plan — so this is a robustness failure, not a correctness one. That is the only reason
+it is not the top item on this page.
+
+`craft-planner.md:37` already says "Return the exact clarification required when
+requirements remain ambiguous," and the Output section requires a `status` field, so a
+blocked path exists. What is missing is that it is step 7 of 7 rather than a terminal
+contract: nowhere does the prompt say *you end in exactly one of two shapes*. An agent
+that has not decided it is finished has no instruction telling it that finishing is
+mandatory.
+
+Two mechanisms, in order of expected reliability:
+
+1. **State the contract in every phase prompt.** A complete structured report, or a
+   structured `blocked` naming the exact missing evidence. No third outcome.
+2. **Enforce it at the store.** `craft-metrics` already refuses
+   `exit --phase A --verdict pass` against a red verify — mechanical refusal at the
+   boundary is the established pattern here, and it is the half that keeps working when
+   prose does not. A `doctor` rule for *phase entered, never exited* costs almost
+   nothing and would have surfaced `edabc620` without anyone reading a transcript. No
+   rule catches it today: a phase was entered, so it is not `ungated`.
+
+The same run exposes a second recording defect worth fixing alongside: C ran twice and
+`edabc620` attributes **zero** usage to it. Whatever dropped that usage makes the run
+invisible to every cost question on this page.
+
+Check before designing anything larger: `agents/craft-planner.md:11` sets
+`completionGuard: false`, as does `craft-builder.md:11`. No other craft agent sets it,
+and it is documented nowhere in this repository. An option named "completion guard",
+disabled on the one agent that failed to complete, is the first thing to run down — if
+the host already has this mechanism and it is switched off, item 1 is a one-line change.
+
+This is prompt hardening plus a store rule, not a phase-shape change. No version bump.
+
+---
+
+## Hard tool budgets strand the agent
+
+**Status:** open · the deadline half needs host support
+
+The retry on `edabc620` narrowed scope to five files and imposed a hard tool budget.
+Once the budget was spent the agent kept attempting tools it could no longer call, and
+still returned nothing. The budget converted a slow phase into a stuck one: a hard block
+removes the agent's ability to act without giving it a reason to stop.
+
+What is wanted instead:
+
+- a **soft warning** once the normal inspection allowance is spent, carrying an explicit
+  instruction to finalize from the evidence already in hand;
+- a **phase deadline**, short relative to the phase's measured wall time;
+- **automatic conversion of a timeout into a structured `blocked`**, so a phase that runs
+  out of time produces evidence rather than silence.
+
+The first is a prompt change. The last two are host capabilities — the pi extension and
+the Claude Code hooks, not the skill files — which puts the deadline half behind the
+Claude Code adapter still unvalidated on a real run. Do the prompt half first; it is free
+and it is most of the value.
+
+One caution on choosing the deadline: do not derive it from v4 wall-clock. Every phase in
+`a5469442` reads ~512,000s because HITL pauses count toward phase duration. Use v3
+figures or turn counts.
 
 ---
 
@@ -28,6 +112,24 @@ markers, and a missed bump means those markers are identical. Only two partial m
 exist — treat any `craft/SKILL.md` phase-structure edit as requiring a bump decision in
 the same commit, and watch for a version whose per-phase numbers shift discontinuously
 mid-sequence.
+
+### Addendum — it happened, in a way not anticipated here
+
+The predicted failure was a *missed* bump. The observed one is a bump landing **mid-run**.
+`a5469442` opened, ran C → counsel → R and entered A using `craft-plan-feasibility` — a v3
+panel agent — then recorded `craft_version 3 (inferred)` followed immediately by
+`craft_version 4 (declared)`, and continued with `craft-counsel` and the v4 shape. One run
+holds both workflows and the store files all of it under v4.
+
+The retro-classifier worked correctly and was overridden: it inferred 3 from the agent
+names, and the later declaration won. That ordering is right in general — a declaration
+should beat an inference — but it means a declaration arriving after work has been done
+silently relabels that work.
+
+Cheap mitigations, neither yet built: refuse a `craft_version` declaration that contradicts
+an already-recorded inference for the same run, or record it and let `doctor` flag the run
+as version-mixed. The second is strictly better, because a run whose version genuinely
+changed is a real event and losing it is worse than labelling it.
 
 ---
 
@@ -227,6 +329,68 @@ Two candidates, in order of expected leverage:
 
 Both are turn-count interventions. Model-tier changes and payload trimming address the
 smaller term.
+
+---
+
+## The file-relevance packet
+
+**Status:** proposed, unmeasured · supersedes a "Discovery phase before C" proposal
+
+**What this replaces.** The original proposal was a read-only Discovery phase before C,
+justified as a fix for the non-termination above: C would receive a curated evidence
+packet and "may inspect only it unless it reports a concrete evidence gap." That framing
+does not survive examination. Discovery is a read-only agent holding the same three tools
+whose entire job is to crawl — nothing in it prevents the failure it was introduced to
+prevent, and when Discovery hangs you are one phase further from implementation. The
+termination fix is the two entries above, and it works whether or not any of this is built.
+
+The constraint was worse than redundant. Restrict C to the packet and no setting avoids
+both failure modes: a permissive evidence-gap escape means C crawls anyway and Discovery
+is pure overhead, while a strict one means C plans on compressed evidence. The second
+pushes on the loop that is already the most cycle-heavy structure on record — `a5469442`
+ran **C four times** and took `needs-replan` from counsel twice, once with
+`probe_required`. One extra C cycle costs more than the enumeration saves. **Drop the
+constraint.** The packet is a head start, not a fence.
+
+**What survives, and why it is worth building anyway.** Two arguments the original
+proposal never made out loud:
+
+*Model arbitrage.* Enumerating which files matter is a cheap-model task. It currently
+happens inside expensive agents — C at 21 turns / 51 tool calls, A at 597 / 1013
+(`a5469442`). Moving those turns down a price tier is a saving at constant total work,
+which is the opposite of the usual phase-shape trade.
+
+*The artifact is durable.* Framed as C's private input, the packet is read once and
+discarded, and total turns almost certainly rise — the same files get read, plus a
+serialization boundary, and C re-opens whatever the packet compressed away. Framed as a
+run artifact that C, R, A, and T all consume, the target moves from C to A. C is 1.4% of
+notional in the v4 run and 11% in v3; **A is 77%**. Every phase re-derives file relevance
+from scratch today. That is the turn-count intervention the cost analysis above asked
+for, aimed at the phase that actually costs something.
+
+A second property comes free. If R appends the files it actually touched, A receives
+*planned-relevant* against *actually-touched* as a diff. Judging plan deviation is already
+A's duty (`SKILL.md:214`), and today A derives it by hand from the tree.
+
+**The gating measurement, before any of this is built.** Whether the packet helps A
+depends entirely on what A's 1013 tool calls are doing. If they are repeated re-reads of a
+small file set, the packet removes them. If they are reasoning loops over code A has
+already read, it removes nothing and adds a payload. A tool-call histogram by file across
+A's window answers it. Do not build against the assumption.
+
+**Open questions**
+
+1. **Phase or artifact?** A phase costs a version bump, a metrics enum entry, `doctor`
+   coverage, and blinding rules for its payload. An artifact the conductor composes costs
+   none of that — but it is then invisible to metrics, and unmeasurable changes are how
+   the version confusion above happened. Current lean: a spawned `craft-scout` recorded as
+   its own phase, accepting the bump, because a change justified on cost that cannot be
+   costed is not worth making.
+2. **Staleness.** The packet is composed before R and consumed by A after R has changed
+   the tree. R appending touched files covers additions; it does not cover an entry that
+   stopped being relevant.
+3. Whether enumeration is genuinely cheap-model work, or whether knowing *which* files
+   matter requires the same judgment that makes C expensive in the first place.
 
 ---
 
