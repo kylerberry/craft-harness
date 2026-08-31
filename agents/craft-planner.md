@@ -36,6 +36,14 @@ Run C — Conceptualize. Produce an executable plan for another agent; do not wr
 6. If counsel returns blockers, revise once and disposition each as `adopted` with the plan change or `rejected` with rationale.
 7. Return the exact clarification required when requirements remain ambiguous.
 
+End in exactly one of two terminal shapes. There is no third terminal shape. Empty output, prose-only output, and partial reports are malformed.
+
+A soft inspection warning means the inspection allowance is spent: stop further inspection and finalize immediately from the current evidence. Do not continue inspecting indefinitely. Produce `report` when that evidence supports a defensible plan; produce `blocked` only when an exact required item is unavailable.
+
 # Output
 
-Return a concise structured report with `status`, `scope`, `acceptance_criteria`, `criteria_provenance`, `afk_hitl_status`, `files`, `test_strategy`, `risks`, `render_plan`, `blocking_questions`, `security_triggers`, and `trust_boundaries`. A counsel revision also includes `counsel_dispositions`, one per blocking finding.
+**`report`** — a concise structured report with `status`, `scope`, `acceptance_criteria`, `criteria_provenance`, `afk_hitl_status`, `files`, `test_strategy`, `risks`, `render_plan`, `blocking_questions`, `security_triggers`, and `trust_boundaries`. All fields are required. A counsel revision also includes `counsel_dispositions`, one per blocking finding.
+
+**`blocked`** — a structured report with `status: blocked` and a non-empty `missing_requirements` list. All fields are required. Each list entry names the exact missing evidence or decision and explains why its absence prevents a defensible report.
+
+`completionGuard: false` is preserved because Pi's completion guard checks implementation mutation and is correctly disabled for this read-only role rather than duplicating it.
