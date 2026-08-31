@@ -15,7 +15,7 @@ craft-metrics start  --kind feature|bugfix|refactor|scaffold|docs|chore
 craft-metrics enter  --run ID --phase D|C|counsel|R|A|F|T|S [--agent NAME]
 craft-metrics exit   --run ID --phase PHASE --reason report|blocked|timeout
                      [--blocked-detail-ref REF]  # required for blocked|timeout, ≤256 chars
-craft-metrics intervene --run ID --phase PHASE --kind finalization-request
+craft-metrics intervene --run ID --phase PHASE --kind health-check
                      --observed-turns N --observed-tools N
 craft-metrics verify --run ID --command "npm test" --exit-code N
 craft-metrics orchestration-failure --run ID --kind validation|parse|dispatch --evidence TEXT
@@ -32,7 +32,7 @@ craft-metrics pin-versions [--apply]
 
 Do not invent tokens or cost in the skill. `--craft-version` is the frontmatter value in `skills/craft/SKILL.md` (currently 5).
 
-`intervene` is not usage and does not change cycles, turns, tools, timeouts, or failovers. `orchestration-failure` evidence is single-line, control-free, ≤1024 bytes; it does not enter a phase.
+`intervene` is not usage and does not change cycles, turns, tools, timeouts, or failovers. `health-check` records a turn-based progress check; it is not a completion deadline. `finalization-request` remains accepted for historical events. `orchestration-failure` evidence is single-line, control-free, ≤1024 bytes; it does not enter a phase.
 
 ## Attribution
 

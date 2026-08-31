@@ -8,14 +8,15 @@ import { portAgent, renderAgent } from "../src/agent-port.ts";
 const sourcePath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "agents", "node-conductor.md");
 const source = readFileSync(sourcePath, "utf8");
 
-test("node-conductor awaits one terminal result through subagent_wait", () => {
+test("node-conductor awaits one terminal result and uses health checks without a completion deadline", () => {
 	assert.match(source, /^  - subagent_wait$/m);
 	assert.match(source, /subagent_wait/);
 	assert.match(source, /one awaited terminal result/i);
 	assert.doesNotMatch(source, /poll(?:ing)? phase status/i);
-	assert.match(source, /finalization-request/);
-	assert.match(source, /without disabling inspection tools/i);
-	assert.match(source, /timeout|blocked/i);
+	assert.match(source, /health-check/);
+	assert.match(source, /Do not impose a wall-clock completion deadline/i);
+	assert.match(source, /long no-activity watchdog/i);
+	assert.doesNotMatch(source, /short finalization deadline/i);
 	assert.match(source, /Claude Code[\s\S]*subagent_wait[\s\S]*unavailab/i);
 });
 

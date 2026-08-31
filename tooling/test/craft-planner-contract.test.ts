@@ -40,9 +40,10 @@ test("planner defines report and blocked as its only terminal shapes", () => {
 	assert.match(outputSection, /`status: blocked`[\s\S]*`missing_requirements`/);
 });
 
-test("planner finalizes from current evidence after a soft inspection warning", () => {
-	assert.match(plannerPrompt, /soft inspection warning[\s\S]*finalize immediately from the current evidence/i);
-	assert.match(plannerPrompt, /Do not continue inspecting indefinitely/i);
+test("planner treats a turn-health check as a check-in, not a completion deadline", () => {
+	assert.match(plannerPrompt, /turn-health check is not a completion deadline/i);
+	assert.match(plannerPrompt, /next concrete inspection action/i);
+	assert.match(plannerPrompt, /continue when work remains/i);
 });
 
 test("planner contract accepts only complete report or blocked shapes", () => {

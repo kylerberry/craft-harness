@@ -94,7 +94,7 @@ After R, `craft-delta --base <R_BASE>` records changed files, validation exit co
 
 Each advisory phase ends in exactly one structured shape: its report, or `blocked` naming the missing evidence or decision. No third outcome. Soft inspection warnings finalize from current evidence; they do not excuse skipping independent final-diff review.
 
-The conductor awaits one terminal result (`subagent_wait` on Pi; Claude Code has no equivalent and must still await the Agent return). After a no-report turn/tool threshold it records one `craft-metrics intervene --kind finalization-request` without disabling inspection tools. Deadline exhaustion exits the phase with `--reason timeout` and a blocked-detail reference. Launch validation/parse/dispatch defects are `orchestration-failure` events: they do not enter a phase or consume its one retry. Timeout or model failure retries only the same role through host-configured `fallbackModels`.
+The conductor awaits one terminal result (`subagent_wait` on Pi; Claude Code has no equivalent and must still await the Agent return). At a configured turn-health cadence it records `craft-metrics intervene --kind health-check` and asks for current evidence, the next concrete action, and remaining uncertainty. A health check does not request completion and a healthy child continues working. No ordinary phase has a wall-clock completion deadline. Only a host-level long no-activity watchdog may interrupt an unresponsive child and record `--reason timeout` with a blocked-detail reference naming the absence of activity. Launch validation/parse/dispatch defects are `orchestration-failure` events: they do not enter a phase or consume its one retry. Timeout or model failure retries only the same role through host-configured `fallbackModels`.
 
 ### Plan counsel gate and security triggers
 
@@ -206,7 +206,7 @@ Install the Pi role routes with `craft-routes --host pi --settings ~/.pi/agent/s
 - **Security starts in planning.** Threat boundaries and abuse cases are considered before code exists, then rechecked against the final diff.
 - **Knowledge compounds.** Sharpen records durable lessons without turning ordinary fixes into documentation churn.
 - **Humans own consequential judgment.** HITL reserves explicit seams for people while the agent handles surrounding implementation and verification.
-- **Phases terminate.** A gate produces a report, a blocked result, or a recorded timeout. Indefinite inspection is a defect; so is a launch failure counted as a phase retry.
+- **Phase health is observable, not prematurely terminated.** Turn-based checks record progress and remaining work without setting a completion deadline. A timeout means a long host-observed absence of activity, never merely that a phase has not yet produced its report; launch failures do not count as phase retries.
 
 ## License
 

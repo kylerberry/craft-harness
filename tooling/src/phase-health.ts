@@ -1,42 +1,39 @@
-export const NO_REPORT_TURNS = 8;
-export const NO_REPORT_TOOLS = 12;
-export const FINALIZATION_DEADLINE_MS = 30_000;
+export const HEALTH_CHECK_TURNS = 12;
+export const HEALTH_CHECK_INTERVAL_TURNS = 12;
 
 export type PhaseEvent =
 	| { type: "tick"; turns: number; tools: number; atMs: number }
 	| { type: "terminal"; shape: "report" | "blocked"; atMs: number };
 
 export type HealthIntervention = {
-	kind: "finalization-request";
+	kind: "health-check";
 	observed_turns: number;
 	observed_tools: number;
 };
 
 export type HealthResult = {
-	terminal: { reason: "report" | "blocked" | "timeout"; detail?: string };
+	terminal?: { reason: "report" | "blocked" };
 	interventions: HealthIntervention[];
 };
 
+/**
+ * Turn budgets are check-in cadences, not completion deadlines. A healthy phase
+ * may continue after every check-in; only a host-level, long no-activity watchdog
+ * may synthesize a timeout.
+ */
 export function supervisePhase(events: PhaseEvent[]): HealthResult {
 	const interventions: HealthIntervention[] = [];
-	let warnedAt: number | undefined;
+	let nextHealthCheckAt = HEALTH_CHECK_TURNS;
 	for (const event of events) {
 		if (event.type === "terminal") return { terminal: { reason: event.shape }, interventions };
-		if (!warnedAt && (event.turns >= NO_REPORT_TURNS || event.tools >= NO_REPORT_TOOLS)) {
+		if (event.turns >= nextHealthCheckAt) {
 			interventions.push({
-				kind: "finalization-request",
+				kind: "health-check",
 				observed_turns: event.turns,
 				observed_tools: event.tools,
 			});
-			warnedAt = event.atMs;
-			continue;
-		}
-		if (warnedAt !== undefined && event.atMs - warnedAt >= FINALIZATION_DEADLINE_MS) {
-			return { terminal: { reason: "timeout", detail: "finalization deadline exhausted" }, interventions };
+			nextHealthCheckAt = event.turns + HEALTH_CHECK_INTERVAL_TURNS;
 		}
 	}
-	if (warnedAt !== undefined) {
-		return { terminal: { reason: "timeout", detail: "finalization deadline exhausted" }, interventions };
-	}
-	return { terminal: { reason: "timeout", detail: "phase did not terminate" }, interventions };
+	return { interventions };
 }

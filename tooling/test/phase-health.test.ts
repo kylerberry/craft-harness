@@ -11,16 +11,16 @@ test("an early blocked report produces one terminal result and no intervention",
 	assert.equal(result.interventions.length, 0);
 });
 
-test("deadline exhaustion synthesizes one timeout after a single finalization request", () => {
+test("turn health checks do not synthesize a timeout", () => {
 	const result = supervisePhase([
-		{ type: "tick", turns: 8, tools: 2, atMs: 5_000 },
-		{ type: "tick", turns: 9, tools: 3, atMs: 40_000 },
+		{ type: "tick", turns: 12, tools: 2, atMs: 5_000 },
+		{ type: "tick", turns: 24, tools: 8, atMs: 3_600_000 },
 	]);
-	assert.equal(result.terminal.reason, "timeout");
-	assert.equal(result.interventions.length, 1);
-	assert.equal(result.interventions[0].kind, "finalization-request");
-	assert.equal(result.interventions[0].observed_turns, 8);
-	assert.equal(result.interventions[0].observed_tools, 2);
+	assert.equal(result.terminal, undefined);
+	assert.deepEqual(result.interventions, [
+		{ kind: "health-check", observed_turns: 12, observed_tools: 2 },
+		{ kind: "health-check", observed_turns: 24, observed_tools: 8 },
+	]);
 });
 
 test("a timely report produces one terminal result and no intervention", () => {

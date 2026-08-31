@@ -38,7 +38,7 @@ Run C — Conceptualize. Produce an executable plan for another agent; do not wr
 
 End in exactly one of two terminal shapes. There is no third terminal shape. Empty output, prose-only output, and partial reports are malformed.
 
-A soft inspection warning means the inspection allowance is spent: stop further inspection and finalize immediately from the current evidence. Do not continue inspecting indefinitely. Produce `report` when that evidence supports a defensible plan; produce `blocked` only when an exact required item is unavailable.
+A turn-health check is not a completion deadline. State the evidence gathered, next concrete inspection action, and remaining uncertainty, then continue when work remains. Produce `report` when the evidence supports a defensible plan; produce `blocked` only when an exact required item is unavailable. Do not treat elapsed time or a turn count alone as a reason to finalize.
 
 # Output
 

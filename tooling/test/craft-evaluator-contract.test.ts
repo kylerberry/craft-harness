@@ -44,9 +44,9 @@ test("the evaluator prompt defines exactly two structured terminal shapes", () =
 	assert.match(output, /exact decision/);
 });
 
-test("soft inspection warnings finalize without weakening independent final-diff review", () => {
-	assert.match(prompt, /soft inspection warning/);
-	assert.match(prompt, /finalize the assessment from the evidence in hand/);
+test("turn-health checks do not weaken independent final-diff review", () => {
+	assert.match(prompt, /turn-health check is not a completion deadline/i);
+	assert.match(prompt, /next concrete inspection action/i);
 	assert.match(prompt, /never excuses skipping the independent review of the final diff/);
 	assert.match(prompt, /Independently review the current diff and evidence/);
 	assert.match(prompt, /Your payload is blinded/);

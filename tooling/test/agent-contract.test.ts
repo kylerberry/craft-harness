@@ -20,8 +20,9 @@ test("security review declares exactly two terminal shapes with required fields"
 	assert.match(prompt, /There is no third terminal shape/i);
 });
 
-test("soft inspection warnings require finalization without weakening review", () => {
-	assert.match(prompt, /soft inspection warning[\s\S]*stop further inspection[\s\S]*finalize[\s\S]*current evidence/i);
+test("turn-health checks do not weaken review", () => {
+	assert.match(prompt, /turn-health check is not a completion deadline/i);
+	assert.match(prompt, /next concrete inspection action/i);
 	assert.match(prompt, /Independently review the final changed surface/);
 	assert.match(prompt, /Your payload is blinded/);
 	assert.match(

@@ -44,7 +44,7 @@ Your payload is blinded: authorship is deliberately withheld and may read as "th
 
 Whether the suite is green was already established by the recorded verification command. Do not re-derive it, do not re-run the suite, and do not report "tests pass" as a finding. Judge what an exit code cannot see.
 
-A soft inspection warning means the inspection budget is nearly exhausted. Make no more tool calls and finalize from the evidence already gathered. When the required inputs and final diff were inspected, finalize the assessment from the evidence in hand and record any limitation in `verification_gaps`. Otherwise return the blocked shape naming what is unavailable. This finalization rule never excuses skipping the independent review of the final diff: summaries do not substitute for inspecting the change set, and absent authorship is not missing evidence.
+A turn-health check is not a completion deadline. State the evidence gathered, next concrete inspection action, and remaining uncertainty, then continue when work remains. When the required inputs and final diff were inspected, finalize the assessment and record any limitation in `verification_gaps`; otherwise return the blocked shape only when an exact required input is unavailable. This rule never excuses skipping the independent review of the final diff: summaries do not substitute for inspecting the change set, and absent authorship is not missing evidence.
 
 # Output
 

@@ -70,7 +70,7 @@ This is prompt hardening plus a store rule, not a phase-shape change. No version
 
 ## Hard tool budgets strand the agent
 
-**Status:** open · the deadline half needs host support
+**Status:** open · revised: turn-based health checks, not phase completion deadlines
 
 The retry on `edabc620` narrowed scope to five files and imposed a hard tool budget.
 Once the budget was spent the agent kept attempting tools it could no longer call, and
@@ -79,20 +79,20 @@ removes the agent's ability to act without giving it a reason to stop.
 
 What is wanted instead:
 
-- a **soft warning** once the normal inspection allowance is spent, carrying an explicit
-  instruction to finalize from the evidence already in hand;
-- a **phase deadline**, short relative to the phase's measured wall time;
-- **automatic conversion of a timeout into a structured `blocked`**, so a phase that runs
-  out of time produces evidence rather than silence.
+- a **turn-based health check** at a configured cadence, recording current evidence, next
+  concrete action, and remaining uncertainty;
+- continued work after a healthy check-in — a turn limit is not a request to finalize;
+- a **long host-level no-activity watchdog** only for a child that stops responding or
+  making observable progress; it may convert that actual hang into a structured timeout.
 
-The first is a prompt change. The last two are host capabilities — the pi extension and
-the Claude Code hooks, not the skill files — which puts the deadline half behind the
-Claude Code adapter still unvalidated on a real run. Do the prompt half first; it is free
-and it is most of the value.
+The original deadline proposal was wrong. A phase normally emits its terminal report only
+when its work is complete, so absence of a report after a few turns is not evidence of a
+hang. The check-in prompt is policy; the no-activity watchdog is host capability in the Pi
+extension and Claude Code hooks. It must measure absence of activity rather than elapsed
+phase duration and must not cut off a healthy phase.
 
-One caution on choosing the deadline: do not derive it from v4 wall-clock. Every phase in
-`a5469442` reads ~512,000s because HITL pauses count toward phase duration. Use v3
-figures or turn counts.
+Phase wall-clock is especially unusable because it includes HITL pauses. Turn counts are
+useful for health observations and cost analysis, not as a completion clock.
 
 ---
 

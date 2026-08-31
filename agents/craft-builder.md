@@ -62,4 +62,4 @@ return_to_c: <required | not-required>
 handoff_reason: <why returning to C is or is not the safe next step>
 ```
 
-A soft inspection warning means stop further discovery and finalize immediately from the evidence already gathered: emit `guidance-report` when that evidence is sufficient, otherwise emit `blocked` naming the exact gap.
+A turn-health check is not a completion deadline. State the evidence gathered, next concrete inspection action, and remaining uncertainty, then continue when work remains. Emit `guidance-report` when the evidence is sufficient; otherwise emit `blocked` naming the exact gap. Do not treat elapsed time or a turn count alone as a reason to finalize.

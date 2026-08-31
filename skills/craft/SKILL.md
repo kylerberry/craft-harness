@@ -76,6 +76,12 @@ craft-metrics exit --run "$RUN" --phase S --reason report --docs-touched N
 
 Every explicit exit requires `--reason report|blocked|timeout`. For `blocked` and `timeout`, also pass `--blocked-detail-ref REF`: a single-line, at-most-256-character pointer to the missing evidence or pending decision. A timeout closes the phase explicitly; do not leave the phase open and rely on absence to imply timeout.
 
+## Phase health
+
+A turn budget is a health-check cadence, not a completion deadline. At each configured cadence, record `craft-metrics intervene --kind health-check` and ask for the current evidence, next concrete action, and remaining uncertainty. A healthy child continues working; do not request a terminal report solely because it has used turns or time.
+
+There is no ordinary wall-clock deadline for completing a phase. Only a host-level, long no-activity watchdog may interrupt an unresponsive child. Its timeout artifact must identify the observed absence of activity; elapsed phase time, including human pauses, is not evidence of a hung child.
+
 Whenever the verification command runs — in R, after a fix in F, and after each DAG merge — record its real exit code:
 
 ```bash

@@ -14,8 +14,8 @@ export type TerminalReason = "report" | "blocked" | "timeout";
 
 export const KINDS: Kind[] = ["feature", "bugfix", "refactor", "scaffold", "docs", "chore"];
 
-export type InterventionKind = "finalization-request";
-export const INTERVENTION_KINDS: InterventionKind[] = ["finalization-request"];
+export type InterventionKind = "finalization-request" | "health-check";
+export const INTERVENTION_KINDS: InterventionKind[] = ["finalization-request", "health-check"];
 
 export interface PhaseIntervention {
 	at: string;

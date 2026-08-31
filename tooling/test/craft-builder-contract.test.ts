@@ -40,7 +40,7 @@ test("builder prompt declares exactly two terminal shapes and all required field
 	assert.match(outputSection, /no third (?:shape|outcome)/i);
 	for (const tag of terminalTags) assert.match(outputSection, new RegExp(`\\b${tag}\\b`));
 	for (const field of [...guidanceFields, ...blockedFields]) assert.match(outputSection, new RegExp(`\\b${field}\\b`));
-	assert.match(outputSection, /soft (?:inspection )?warning/i);
+	assert.match(outputSection, /turn-health check is not a completion deadline/i);
 });
 
 test("terminal fixtures accept only complete guidance-report or blocked shapes", () => {

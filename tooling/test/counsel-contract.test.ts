@@ -40,8 +40,9 @@ test("counsel defines report and blocked as its only terminal shapes", () => {
 	assert.match(outputSection, /`probe_required` is a finding field, never a status/i);
 });
 
-test("counsel finalizes from current evidence after a soft inspection warning", () => {
-	assert.match(outputSection, /soft inspection warning[\s\S]*finalize from the current evidence/i);
+test("counsel treats a turn-health check as a check-in, not a completion deadline", () => {
+	assert.match(outputSection, /turn-health check[\s\S]*not a completion deadline/i);
+	assert.match(outputSection, /next concrete inspection action/i);
 	assert.match(outputSection, /do not guess/i);
 	assert.match(outputSection, /use the blocked shape only when required input/i);
 });

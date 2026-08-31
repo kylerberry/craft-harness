@@ -238,7 +238,7 @@ test("exit requires an explicit terminal reason", () => {
 	}
 });
 
-test("intervene records a finalization request and show exposes its observations", () => {
+test("intervene records a health check and show exposes its observations", () => {
 	const h = harness();
 	try {
 		main(["start", "--kind", "chore", "--mode", "lite"], h.io);
@@ -246,19 +246,19 @@ test("intervene records a finalization request and show exposes its observations
 		main(["enter", "--run", id, "--phase", "R"], h.io);
 		assert.equal(
 			main([
-				"intervene", "--run", id, "--phase", "R", "--kind", "finalization-request",
+				"intervene", "--run", id, "--phase", "R", "--kind", "health-check",
 				"--observed-turns", "8", "--observed-tools", "3",
 			], h.io),
 			0,
 		);
 		const event = h.events().find((e) => e.t === "phase_intervention");
 		assert.equal(event.phase, "R");
-		assert.equal(event.kind, "finalization-request");
+		assert.equal(event.kind, "health-check");
 		assert.equal(event.observed_turns, 8);
 		assert.equal(event.observed_tools, 3);
 		assert.match(event.at, /^\d{4}-\d{2}-\d{2}T/);
 		main(["show", "--run", id], h.io);
-		assert.match(h.out(), /finalization-request.*8t \/ 3tools/);
+		assert.match(h.out(), /health-check.*8t \/ 3tools/);
 	} finally {
 		h.cleanup();
 	}
