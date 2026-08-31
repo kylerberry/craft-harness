@@ -260,6 +260,22 @@ test("doctor exits 0 on clean data and 1 when it finds a problem", () => {
 	}
 });
 
+test("doctor renders a never-exited phase with its run id and phase", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "feature", "--mode", "full", "--host", "pi"], h.io);
+		const id = h.out().trim();
+		main(["enter", "--run", id, "--phase", "R"], h.io);
+		main(["end", "--run", id, "--outcome", "blocked"], h.io);
+		assert.equal(main(["doctor"], h.io), 1);
+		assert.match(h.out(), /phase-never-exited/);
+		assert.match(h.out(), new RegExp(id.slice(0, 8)));
+		assert.match(h.out(), /phase R/);
+	} finally {
+		h.cleanup();
+	}
+});
+
 test("show reports nothing gracefully when there are no runs", () => {
 	const h = harness();
 	try {

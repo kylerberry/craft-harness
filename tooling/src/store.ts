@@ -531,6 +531,7 @@ function fold(byId: Map<string, Run>, ev: LogEvent, finalMode?: Map<string, Mode
 		}
 		case "phase_exit": {
 			const p = closePhase(run, ev.phase, ev.at);
+			p.exits = Math.min((p.exits ?? 0) + 1, p.cycles ?? 0);
 			// Accumulate before assigning: `Object.assign` overwrites, so a phase that
 			// failed, was fixed, and passed would otherwise fold to a clean pass and
 			// erase every finding that caused the loop.
@@ -777,6 +778,7 @@ export interface Complaint {
 	kind:
 		| "ungated"
 		| "stale-open"
+		| "phase-never-exited"
 		| "costless-model"
 		| "unattributed"
 		| "unverified-pass"
@@ -822,6 +824,18 @@ export function diagnose(runs: Run[], now = Date.now(), staleHours = 12): Compla
 				detail: `${run.repo ?? run.cwd}: no harness recorded — cannot be compared against pi or claude-code`,
 				cost_usd: runCost,
 			});
+		}
+		for (const phase of run.phases) {
+			const entries = phase.cycles ?? 0;
+			const exits = phase.exits ?? 0;
+			if (entries > exits) {
+				out.push({
+					kind: "phase-never-exited",
+					run_id: run.run_id,
+					detail: `${run.repo ?? run.cwd}: phase ${phase.name} entered ${entries} times, ${entries - exits} without phase_exit`,
+					cost_usd: phase.notional_cost_usd ?? phase.cost_usd,
+				});
+			}
 		}
 		// Fix exists to resolve blockers. Entering it when Assess and Tighten both
 		// passed means the phase sequence is being emitted mechanically rather than
