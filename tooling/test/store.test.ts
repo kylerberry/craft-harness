@@ -43,6 +43,59 @@ test("usage between enter/exit lands on that phase", () => {
 	}
 });
 
+test("explicit terminal reasons persist and timeout closes an entered phase", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const timedOut = s.openRun({ host: "pi", cwd: "/tmp/timeout", mode: "lite" });
+		s.enterPhase(timedOut.run_id, "R", { at: "2026-04-08T10:00:00.000Z" });
+		s.exitPhase(
+			timedOut.run_id,
+			"R",
+			{ terminal_reason: "timeout", blocked_detail_ref: "  verify log artifact-17  ", decisions: 2 },
+			"2026-04-08T10:01:00.000Z",
+		);
+		const closed = s.get(timedOut.run_id)!;
+		const render = closed.phases.find((p) => p.name === "R")!;
+		assert.equal(render.terminal_reason, "timeout");
+		assert.equal(render.blocked_detail_ref, "verify log artifact-17");
+		assert.equal(render.decisions, 2, "phase-specific fields survive terminal metadata");
+		assert.equal(render.ended_at, "2026-04-08T10:01:00.000Z");
+		assert.equal(closed.open_phase, null);
+
+		const stillOpen = s.openRun({ host: "pi", cwd: "/tmp/open", mode: "lite" });
+		s.enterPhase(stillOpen.run_id, "R", { at: "2026-04-08T10:00:00.000Z" });
+		const openRender = s.get(stillOpen.run_id)!.phases.find((p) => p.name === "R")!;
+		assert.equal(openRender.terminal_reason, undefined);
+		assert.equal(openRender.ended_at, null);
+	} finally {
+		cleanup();
+	}
+});
+
+test("blocked and timeout terminal reasons require a bounded single-line detail reference", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/demo", mode: "lite" });
+		s.enterPhase(run.run_id, "C");
+		for (const reason of ["blocked", "timeout"] as const) {
+			assert.throws(() => s.exitPhase(run.run_id, "C", { terminal_reason: reason }), /requires --blocked-detail-ref/);
+		}
+		assert.throws(
+			() => s.exitPhase(run.run_id, "C", { terminal_reason: "blocked", blocked_detail_ref: "x".repeat(257) }),
+			/at most 256/,
+		);
+		assert.throws(
+			() => s.exitPhase(run.run_id, "C", { terminal_reason: "timeout", blocked_detail_ref: "line one\nline two" }),
+			/one line/,
+		);
+		assert.equal(s.loadEvents().filter((event) => event.t === "phase_exit").length, 0);
+		s.exitPhase(run.run_id, "C", { terminal_reason: "blocked", blocked_detail_ref: "x".repeat(256) });
+		assert.equal(s.get(run.run_id)!.phases.find((p) => p.name === "C")!.blocked_detail_ref?.length, 256);
+	} finally {
+		cleanup();
+	}
+});
+
 test("usage with no open phase and no agent is unattributed", () => {
 	const { store: s, cleanup } = tmpStore();
 	try {

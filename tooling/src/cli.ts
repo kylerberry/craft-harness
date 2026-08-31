@@ -12,7 +12,18 @@ import {
 	phaseTotalsByGroup,
 	type PhaseTotal,
 } from "./store.ts";
-import { HOSTS, KINDS, PHASES, type Host, type Kind, type Mode, type Outcome, type PhaseName } from "./schema.ts";
+import {
+	HOSTS,
+	KINDS,
+	PHASES,
+	TERMINAL_REASONS,
+	type Host,
+	type Kind,
+	type Mode,
+	type Outcome,
+	type PhaseName,
+	type TerminalReason,
+} from "./schema.ts";
 import type { PriceTable } from "./pricing.ts";
 
 /**
@@ -59,7 +70,8 @@ const USAGE = `craft-metrics — phase-grained CRAFT run collector
 Usage:
   craft-metrics start  --kind feature|bugfix|refactor|scaffold|docs|chore [--run ID] --mode full|hitl|lite|dag [--host pi|claude-code] [--cwd PATH] [--repo NAME] [--craft-version V]
   craft-metrics enter  --run ID --phase C|counsel|R|A|F|T|S [--agent NAME]
-  craft-metrics exit   --run ID --phase PHASE [--verdict V] [--blocking-findings N] [--p0 N] [--non-p0 N]
+  craft-metrics exit   --run ID --phase PHASE --reason report|blocked|timeout [--blocked-detail-ref REF]
+                       [--verdict V] [--blocking-findings N] [--p0 N] [--non-p0 N]
                        [--security-triggers a,b] [--counsel-status S] [--t-status S] [--docs-touched N]
                        [--blocking-questions N] [--afk-hitl-status S] [--criteria-provenance S] [--probe-required]
                        [--decisions N] [--plan-deviations N]
@@ -127,6 +139,14 @@ function parseKind(argv: string[], io: Io): Kind {
 	return k as Kind;
 }
 
+function parseTerminalReason(argv: string[], io: Io): TerminalReason {
+	const reason = requireArg("--reason", argv, io);
+	if (!TERMINAL_REASONS.includes(reason as TerminalReason)) {
+		fail(io, `invalid --reason ${reason} (use ${TERMINAL_REASONS.join("|")})`);
+	}
+	return reason as TerminalReason;
+}
+
 function parseHost(argv: string[], io: Io): Host {
 	const h = requireArg("--host", argv, io);
 	if (!HOSTS.includes(h as Host)) fail(io, `invalid --host ${h} (use ${HOSTS.join("|")})`);
@@ -175,6 +195,8 @@ export function main(argv: string[], io: Io = defaultIo): number {
 		}
 		case "exit": {
 			const run = store.exitPhase(requireArg("--run", rest, io), parsePhase(rest, io), {
+				terminal_reason: parseTerminalReason(rest, io),
+				blocked_detail_ref: arg("--blocked-detail-ref", rest)?.trim(),
 				security_triggers: arg("--security-triggers", rest)?.split(",").filter(Boolean),
 				blocking_questions: num("--blocking-questions", rest),
 				afk_hitl_status: arg("--afk-hitl-status", rest),

@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import {
 	AGENT_PHASE,
+	BLOCKED_DETAIL_REF_MAX,
+	TERMINAL_REASONS,
 	type Attribution,
 	type Host,
 	type Kind,
@@ -343,7 +345,25 @@ export class Store {
 
 	exitPhase(runId: string, phase: PhaseName, fields: PhaseExitFields = {}, at?: string): Run {
 		const run = this.require(runId);
-		const verdict = fields.verdict?.toLowerCase();
+		const terminalReason = fields.terminal_reason ?? "report";
+		if (!TERMINAL_REASONS.includes(terminalReason)) {
+			throw new Error(`refusing phase_exit: invalid terminal reason ${terminalReason}`);
+		}
+		const blockedDetailRef = fields.blocked_detail_ref?.trim();
+		if ((terminalReason === "blocked" || terminalReason === "timeout") && !blockedDetailRef) {
+			throw new Error(`refusing phase_exit: reason=${terminalReason} requires --blocked-detail-ref`);
+		}
+		if (blockedDetailRef && (blockedDetailRef.length > BLOCKED_DETAIL_REF_MAX || /[\r\n]/.test(blockedDetailRef))) {
+			throw new Error(
+				`refusing phase_exit: --blocked-detail-ref must be one line of at most ${BLOCKED_DETAIL_REF_MAX} characters`,
+			);
+		}
+		const persistedFields: PhaseExitFields = {
+			...fields,
+			terminal_reason: terminalReason,
+			blocked_detail_ref: blockedDetailRef,
+		};
+		const verdict = persistedFields.verdict?.toLowerCase();
 		if (phase === "A" && verdict === "pass" && run.last_verify && run.last_verify.exit_code !== 0) {
 			throw new Error(
 				`refusing phase_exit: A cannot report verdict=pass while verification is red. ` +
@@ -357,7 +377,7 @@ export class Store {
 			run_id: runId,
 			at: at ?? nowIso(),
 			phase,
-			fields,
+			fields: persistedFields,
 		});
 		return this.get(runId) ?? this.missing(runId);
 	}
@@ -717,6 +737,9 @@ export function summarize(runs: Run[]): string {
 			const model = p.model ?? p.models[0] ?? "-";
 			const guessed = p.backfilled_cost_usd > 0 ? `  (backfilled $${p.backfilled_cost_usd.toFixed(4)})` : "";
 			const blinded = p.blinding_scrubs > 0 ? `  (blinded ${p.blinding_scrubs})` : "";
+			const terminal = p.terminal_reason
+				? `  (exit ${p.terminal_reason}${p.blocked_detail_ref ? `: ${p.blocked_detail_ref}` : ""})`
+				: "";
 			// A phase entered more than once argued with the next one. Only the final
 			// verdict survives the fold, so without this the loop is invisible.
 			const looped =
@@ -736,7 +759,7 @@ export function summarize(runs: Run[]): string {
 							: "$    n/a"
 						: "$0.0000";
 			lines.push(
-				`  ${p.name.padEnd(13)}  ${spend}  ${(p.duration_ms / 1000).toFixed(1)}s  ${p.turns}t ${p.tool_calls}tools  ${fmtTokens(p.tokens)}  ${model}${guessed}${blinded}${looped}`,
+				`  ${p.name.padEnd(13)}  ${spend}  ${(p.duration_ms / 1000).toFixed(1)}s  ${p.turns}t ${p.tool_calls}tools  ${fmtTokens(p.tokens)}  ${model}${guessed}${blinded}${terminal}${looped}`,
 			);
 		}
 		// A `dag` supervisor has no phases by design — orchestration is its work — so

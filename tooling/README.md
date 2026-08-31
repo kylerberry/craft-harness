@@ -94,9 +94,11 @@ At each CRAFT gate the conductor runs:
 RUN=$(craft-metrics start --kind feature --mode full --host pi --cwd "$PWD")   # once
 craft-metrics enter --run "$RUN" --phase C --agent craft-planner
 # ... phase work ...
-craft-metrics exit  --run "$RUN" --phase C --security-triggers untrusted-input
+craft-metrics exit  --run "$RUN" --phase C --reason report --security-triggers untrusted-input
 craft-metrics end   --run "$RUN" --outcome completed
 ```
+
+Every explicit phase exit supplies `--reason report|blocked|timeout`. Blocked and timeout exits also require `--blocked-detail-ref`, a single-line reference of at most 256 characters to the missing evidence or pending decision; `show` renders both fields. A timeout exit is therefore a closed terminal artifact, unlike a phase that was entered but never exited.
 
 Do not invent tokens or cost in the skill. The host adapter stamps those.
 
