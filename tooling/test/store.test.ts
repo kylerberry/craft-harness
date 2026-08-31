@@ -43,6 +43,33 @@ test("usage between enter/exit lands on that phase", () => {
 	}
 });
 
+test("stamped D usage folds as a gateable phase", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/demo", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "D", { at: "2026-04-08T10:00:00.000Z" });
+		s.recordUsage(run.run_id, {
+			phase: "D",
+			cost_usd: 0.25,
+			tokens: { input: 100, output: 20 },
+			turns: 2,
+		});
+		s.exitPhase(run.run_id, "D", {}, "2026-04-08T10:01:00.000Z");
+		const got = s.get(run.run_id)!;
+		const d = got.phases.find((p) => p.name === "D")!;
+		assert.equal(d.cost_usd, 0.25);
+		assert.equal(d.tokens.input, 100);
+		assert.equal(d.turns, 2);
+		assert.equal(d.attribution.stamped, 1);
+		assert.equal(d.cycles, 1);
+		assert.equal(got.open_phase, null);
+		assert.equal(got.phase_entries, 1);
+		assert.ok(!got.phases.some((p) => p.name === "unattributed"));
+	} finally {
+		cleanup();
+	}
+});
+
 test("usage with no open phase and no agent is unattributed", () => {
 	const { store: s, cleanup } = tmpStore();
 	try {

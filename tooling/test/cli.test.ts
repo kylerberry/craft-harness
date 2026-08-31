@@ -107,6 +107,7 @@ test("an invalid kind, mode, or phase exits 2 with a specific message", () => {
 		[["start", "--kind", "feature", "--mode", "wat"], /invalid --mode wat/],
 		[["enter", "--run", "x", "--phase", "wat"], /invalid --phase wat/],
 		// Derived buckets are not gates a caller may enter.
+		[["enter", "--run", "x", "--phase", "supervisor"], /invalid --phase supervisor/],
 		[["enter", "--run", "x", "--phase", "unattributed"], /invalid --phase unattributed/],
 		// Host decides which population a run is compared within, so a near-miss
 		// spelling must fail rather than quietly open a third harness.
@@ -422,7 +423,7 @@ test("every valid mode and kind is accepted", () => {
 });
 
 test("every gateable phase is accepted by enter", () => {
-	for (const phase of ["C", "counsel", "R", "A", "F", "T", "S"]) {
+	for (const phase of ["D", "C", "counsel", "R", "A", "F", "T", "S"]) {
 		const h = harness();
 		try {
 			main(["start", "--kind", "feature", "--mode", "full"], h.io);
@@ -431,6 +432,29 @@ test("every gateable phase is accepted by enter", () => {
 		} finally {
 			h.cleanup();
 		}
+	}
+});
+
+test("D round-trips and stamped usage appears in show and totals", () => {
+	const h = harness();
+	try {
+		main(["start", "--kind", "chore", "--mode", "full", "--craft-version", "4"], h.io);
+		const id = h.out().trim();
+		assert.equal(main(["enter", "--run", id, "--phase", "D"], h.io), 0);
+		assert.equal(main(["usage", "--run", id, "--phase", "D", "--cost", "0.25", "--input", "100", "--turns", "2"], h.io), 0);
+		assert.equal(main(["exit", "--run", id, "--phase", "D"], h.io), 0);
+
+		const events = h.events();
+		assert.ok(events.some((e) => e.t === "phase_enter" && e.phase === "D"));
+		assert.ok(events.some((e) => e.t === "phase_exit" && e.phase === "D"));
+		assert.equal(events.find((e) => e.t === "usage")?.phase, "D");
+
+		main(["show", "--run", id], h.io);
+		assert.match(h.out(), /^  D\s+\$0\.2500/m);
+		main(["totals", "--all"], h.io);
+		assert.match(h.out(), /^D\s+1\s+/m);
+	} finally {
+		h.cleanup();
 	}
 });
 
