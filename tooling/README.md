@@ -1,3 +1,14 @@
+# craft-discover
+
+`craft-discover` performs deterministic, read-only Discovery and writes a neutral YAML evidence packet beneath the OS temporary directory:
+
+```bash
+craft-discover --task-source src/file.ts \
+  --fact 'supported statement::docs/spec.md:12'
+```
+
+`--task-source` and `--fact` are repeatable; paths are repository-relative. The command resolves applicable ancestor `AGENTS.md` files and a single Markdown link whose label contains `current` in `docs/wiki/index.md`. It hashes exact task-source bytes, verifies each claimed fact against its cited line, and records Graphify output as `current`, `stale`, or `unavailable` without rebuilding it. Exit 0 means authority resolved, exit 1 means a packet was written with unresolved/conflicting authority named in `evidence_gaps`, and exit 2 means invalid input (no packet). The packet always contains exactly `schema_version`, `base_commit`, `graph_status`, `authority_sources`, `task_sources`, `graph_candidates`, `verified_facts`, and `evidence_gaps`.
+
 # craft-metrics
 
 Phase-grained collector for CRAFT runs. Skills emit semantics; hosts emit usage. Neither is complete alone.

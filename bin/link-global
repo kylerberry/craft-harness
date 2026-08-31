@@ -33,7 +33,7 @@ for skill in "$repo"/skills/*; do
 done
 
 mkdir -p "$HOME/.local/bin"
-for command in craft-metrics craft-mutate craft-hook; do
+for command in craft-discover craft-metrics craft-mutate craft-hook; do
 	link "$repo/tooling/bin/$command.mjs" "$HOME/.local/bin/$command"
 done
 

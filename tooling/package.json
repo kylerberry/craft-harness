@@ -5,6 +5,7 @@
 	"type": "module",
 	"description": "Scripting tools for the CRAFTS workflow (Pi + Claude Code)",
 	"bin": {
+		"craft-discover": "./bin/craft-discover.mjs",
 		"craft-metrics": "./bin/craft-metrics.mjs",
 		"craft-mutate": "./bin/craft-mutate.mjs"
 	},
