@@ -106,9 +106,11 @@ test("an invalid kind, mode, or phase exits 2 with a specific message", () => {
 		[["start", "--kind", "wat", "--mode", "full"], /invalid --kind wat/],
 		[["start", "--kind", "feature", "--mode", "wat"], /invalid --mode wat/],
 		[["enter", "--run", "x", "--phase", "wat"], /invalid --phase wat/],
-		// Derived buckets are not gates a caller may enter.
+		// Derived buckets are not gates a caller may enter or exit.
 		[["enter", "--run", "x", "--phase", "supervisor"], /invalid --phase supervisor/],
 		[["enter", "--run", "x", "--phase", "unattributed"], /invalid --phase unattributed/],
+		[["exit", "--run", "x", "--phase", "supervisor"], /invalid --phase supervisor/],
+		[["exit", "--run", "x", "--phase", "unattributed"], /invalid --phase unattributed/],
 		// Host decides which population a run is compared within, so a near-miss
 		// spelling must fail rather than quietly open a third harness.
 		[["start", "--kind", "feature", "--mode", "full", "--host", "claude"], /invalid --host claude/],
