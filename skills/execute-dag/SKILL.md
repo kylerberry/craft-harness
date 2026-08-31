@@ -65,6 +65,8 @@ The supervisor creates every node worktree before dispatch. Never use the subage
 
 Write each node task/evidence packet with `writeNodePackets` (OS temporary directory). Pass only packet **paths** and bounded plain metadata into the static script `tooling/src/dag-workflow.static.js`. Never interpolate node intent, criteria, or other arbitrary text into JavaScript source. Packets exclude secrets. Delete packets when the DAG is terminal and successful; retain them when a node is blocked or failed.
 
+Before every execution attempt, run `subagent` `action: validate` on that **exact** `workflowScript`. A validation, parse, or dispatch defect stops launch: record `craft-metrics orchestration-failure`, dispatch no node-conductor, and consume no node or CRAFT phase attempt. Execution proceeds only after the orchestration defect is corrected and validation succeeds again.
+
 ```
 runs.run(`node-${id}`, {
   agent: "node-conductor",

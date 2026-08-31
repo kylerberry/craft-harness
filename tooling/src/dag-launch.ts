@@ -1,4 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import type { Store } from "./store.ts";
+import type { OrchestrationFailureKind } from "./schema.ts";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +28,34 @@ function scrubPacket(node: NodePacket): NodePacket {
 		acceptance_criteria: node.acceptance_criteria.map(scrub),
 		depends_on: [...node.depends_on],
 	};
+}
+
+export function workflowValidateCall(scriptPath: string = STATIC_WORKFLOW): { action: "validate"; workflowScript: string } {
+	return { action: "validate", workflowScript: scriptPath };
+}
+
+export type ValidationResult = { ok: true } | { ok: false; kind: OrchestrationFailureKind; evidence: string };
+
+export type LaunchGate =
+	| { status: "blocked"; dispatched: false; kind: OrchestrationFailureKind; evidence: string }
+	| { status: "ready"; dispatched: true };
+
+export function applyWorkflowValidation(
+	store: Store,
+	runId: string,
+	call: { action: "validate"; workflowScript: string },
+	result: ValidationResult,
+): LaunchGate {
+	if (call.action !== "validate") throw new Error("workflow validation call required before dispatch");
+	if (call.workflowScript !== STATIC_WORKFLOW && !call.workflowScript.endsWith("dag-workflow.static.js")) {
+		store.recordOrchestrationFailure(runId, "validation", "workflowScript is not the static execute-dag script");
+		return { status: "blocked", dispatched: false, kind: "validation", evidence: "workflowScript is not the static execute-dag script" };
+	}
+	if (!result.ok) {
+		store.recordOrchestrationFailure(runId, result.kind, result.evidence);
+		return { status: "blocked", dispatched: false, kind: result.kind, evidence: result.evidence };
+	}
+	return { status: "ready", dispatched: true };
 }
 
 export function writeNodePackets(nodes: NodePacket[], _hintDir?: string): { packetDir: string; scriptPath: string } {
