@@ -43,6 +43,54 @@ test("usage between enter/exit lands on that phase", () => {
 	}
 });
 
+test("phase interventions fold without changing usage or transition accounting", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/demo", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "R", { at: "2026-04-08T10:00:00.000Z" });
+		s.recordIntervention(run.run_id, "R", "finalization-request", 8, 3, "2026-04-08T10:01:00.000Z");
+
+		const got = s.get(run.run_id)!;
+		const r = got.phases.find((p) => p.name === "R")!;
+		assert.equal(r.intervention_count, 1);
+		assert.deepEqual(r.interventions, [
+			{
+				at: "2026-04-08T10:01:00.000Z",
+				kind: "finalization-request",
+				observed_turns: 8,
+				observed_tools: 3,
+			},
+		]);
+		assert.equal(got.phase_entries, 1);
+		assert.equal(r.cycles, 1);
+		assert.equal(r.turns, 0);
+		assert.equal(r.tool_calls, 0);
+		assert.equal(r.cost_usd, 0);
+		assert.deepEqual(r.tokens, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+		assert.deepEqual(r.by_model, {});
+		assert.equal(r.timeouts, 0);
+		assert.equal(r.failovers, 0);
+		assert.deepEqual(r.attribution, { stamped: 0, "open-phase": 0, "agent-map": 0, backfilled: 0, none: 0 });
+		assert.equal(s.openPhase(run.run_id), "R");
+	} finally {
+		cleanup();
+	}
+});
+
+test("phase interventions require the named phase to be open and bounded observations", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/demo", repo: "demo", mode: "full" });
+		assert.throws(() => s.recordIntervention(run.run_id, "R", "finalization-request", 1, 1), /phase R is not open/);
+		s.enterPhase(run.run_id, "R");
+		assert.throws(() => s.recordIntervention(run.run_id, "A", "finalization-request", 1, 1), /phase A is not open/);
+		assert.throws(() => s.recordIntervention(run.run_id, "R", "finalization-request", -1, 1), /observed turns/);
+		assert.throws(() => s.recordIntervention(run.run_id, "R", "finalization-request", 1, 1.5), /observed tools/);
+	} finally {
+		cleanup();
+	}
+});
+
 test("usage with no open phase and no agent is unattributed", () => {
 	const { store: s, cleanup } = tmpStore();
 	try {

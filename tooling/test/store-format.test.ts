@@ -69,6 +69,25 @@ test("summarize renders the run header with version, kind, mode and outcome", ()
 	}
 });
 
+test("summarize renders phase intervention details only when present", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/p", repo: "demo", mode: "lite", kind: "chore" });
+		s.enterPhase(run.run_id, "R");
+		s.recordIntervention(run.run_id, "R", "finalization-request", 8, 3, "2026-04-08T12:00:00.000Z");
+		const text = summarize(s.loadAll());
+		assert.match(text, /interventions 1/);
+		assert.match(text, /finalization-request  2026-04-08T12:00:00.000Z  8t \/ 3tools/);
+
+		const clean = s.openRun({ host: "pi", cwd: "/tmp/clean", repo: "clean", mode: "lite", kind: "chore" });
+		s.enterPhase(clean.run_id, "R");
+		const onlyClean = summarize(s.loadAll().filter((r) => r.run_id === clean.run_id));
+		assert.ok(!onlyClean.includes("interventions"));
+	} finally {
+		cleanup();
+	}
+});
+
 test("an inferred version is marked, a declared one is not", () => {
 	const { store: s, cleanup } = tmpStore();
 	try {

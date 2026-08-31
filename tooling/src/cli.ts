@@ -12,7 +12,18 @@ import {
 	phaseTotalsByGroup,
 	type PhaseTotal,
 } from "./store.ts";
-import { HOSTS, KINDS, PHASES, type Host, type Kind, type Mode, type Outcome, type PhaseName } from "./schema.ts";
+import {
+	HOSTS,
+	INTERVENTION_KINDS,
+	KINDS,
+	PHASES,
+	type Host,
+	type InterventionKind,
+	type Kind,
+	type Mode,
+	type Outcome,
+	type PhaseName,
+} from "./schema.ts";
 import type { PriceTable } from "./pricing.ts";
 
 /**
@@ -64,6 +75,7 @@ Usage:
                        [--blocking-questions N] [--afk-hitl-status S] [--criteria-provenance S] [--probe-required]
                        [--decisions N] [--plan-deviations N]
                        [--mutants-tested N] [--mutants-survived N]
+  craft-metrics intervene --run ID --phase PHASE --kind finalization-request --observed-turns N --observed-tools N
   craft-metrics usage  --run ID [--phase P] [--model M] [--provider P] [--cost N] [--input N] [--output N]
                        [--cache-read N] [--cache-write N] [--turns N] [--tool NAME] [--agent NAME]
                        [--subagent] [--quota-error] [--timeout] [--failover] [--blinding-scrubs N]
@@ -125,6 +137,23 @@ function parseKind(argv: string[], io: Io): Kind {
 	const k = requireArg("--kind", argv, io);
 	if (!KINDS.includes(k as Kind)) fail(io, `invalid --kind ${k} (use ${KINDS.join("|")})`);
 	return k as Kind;
+}
+
+function parseInterventionKind(argv: string[], io: Io): InterventionKind {
+	const k = requireArg("--kind", argv, io);
+	if (!INTERVENTION_KINDS.includes(k as InterventionKind)) {
+		fail(io, `invalid --kind ${k} (use ${INTERVENTION_KINDS.join("|")})`);
+	}
+	return k as InterventionKind;
+}
+
+function nonNegativeInteger(flag: string, argv: string[], io: Io): number {
+	const raw = requireArg(flag, argv, io);
+	const value = Number(raw);
+	if (!Number.isSafeInteger(value) || value < 0) {
+		fail(io, `invalid ${flag} ${raw} (non-negative integer required)`);
+	}
+	return value;
 }
 
 function parseHost(argv: string[], io: Io): Host {
@@ -192,6 +221,17 @@ export function main(argv: string[], io: Io = defaultIo): number {
 				mutants_tested: num("--mutants-tested", rest),
 				mutants_survived: num("--mutants-survived", rest),
 			});
+			io.write(run.run_id + "\n");
+			return 0;
+		}
+		case "intervene": {
+			const run = store.recordIntervention(
+				requireArg("--run", rest, io),
+				parsePhase(rest, io),
+				parseInterventionKind(rest, io),
+				nonNegativeInteger("--observed-turns", rest, io),
+				nonNegativeInteger("--observed-tools", rest, io),
+			);
 			io.write(run.run_id + "\n");
 			return 0;
 		}

@@ -4,8 +4,10 @@ import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import {
 	AGENT_PHASE,
+	INTERVENTION_KINDS,
 	type Attribution,
 	type Host,
+	type InterventionKind,
 	type Kind,
 	type Mode,
 	type Outcome,
@@ -103,6 +105,16 @@ type LogEvent =
 	  }
 	| { v: 1; t: "phase_enter"; run_id: string; at: string; phase: PhaseName; agent?: string }
 	| { v: 1; t: "phase_exit"; run_id: string; at: string; phase: PhaseName; fields?: PhaseExitFields }
+	| {
+			v: 1;
+			t: "phase_intervention";
+			run_id: string;
+			at: string;
+			phase: PhaseName;
+			kind: InterventionKind;
+			observed_turns: number;
+			observed_tools: number;
+	  }
 	| { v: 1; t: "usage"; run_id: string; at: string } & UsageEvent
 	| { v: 1; t: "hitl_pause"; run_id: string; at: string }
 	| { v: 1; t: "hitl_resume"; run_id: string; at: string }
@@ -362,6 +374,38 @@ export class Store {
 		return this.get(runId) ?? this.missing(runId);
 	}
 
+	recordIntervention(
+		runId: string,
+		phase: PhaseName,
+		kind: InterventionKind,
+		observedTurns: number,
+		observedTools: number,
+		at?: string,
+	): Run {
+		const run = this.require(runId);
+		if (run.open_phase !== phase) {
+			throw new Error(`refusing phase_intervention: phase ${phase} is not open (open: ${run.open_phase ?? "none"})`);
+		}
+		if (!INTERVENTION_KINDS.includes(kind)) throw new Error(`invalid intervention kind ${kind}`);
+		if (!Number.isSafeInteger(observedTurns) || observedTurns < 0) {
+			throw new Error("invalid observed turns (non-negative integer required)");
+		}
+		if (!Number.isSafeInteger(observedTools) || observedTools < 0) {
+			throw new Error("invalid observed tools (non-negative integer required)");
+		}
+		this.append({
+			v: SCHEMA_VERSION,
+			t: "phase_intervention",
+			run_id: runId,
+			at: at ?? nowIso(),
+			phase,
+			kind,
+			observed_turns: observedTurns,
+			observed_tools: observedTools,
+		});
+		return this.require(runId);
+	}
+
 	recordUsage(runId: string, event: UsageEvent, fold = true): Run | undefined {
 		this.append({
 			v: SCHEMA_VERSION,
@@ -540,6 +584,17 @@ function fold(byId: Map<string, Run>, ev: LogEvent, finalMode?: Map<string, Mode
 			if (ev.fields) Object.assign(p, stripUndefined(normalizeFields(ev.fields)));
 			if (run.open_phase === ev.phase) run.open_phase = null;
 			run.seams = computeSeams(run);
+			return;
+		}
+		case "phase_intervention": {
+			const p = phaseByName(run, ev.phase);
+			p.intervention_count = (p.intervention_count ?? 0) + 1;
+			(p.interventions ??= []).push({
+				at: ev.at,
+				kind: ev.kind,
+				observed_turns: ev.observed_turns,
+				observed_tools: ev.observed_tools,
+			});
 			return;
 		}
 		case "usage": {
@@ -738,6 +793,14 @@ export function summarize(runs: Run[]): string {
 			lines.push(
 				`  ${p.name.padEnd(13)}  ${spend}  ${(p.duration_ms / 1000).toFixed(1)}s  ${p.turns}t ${p.tool_calls}tools  ${fmtTokens(p.tokens)}  ${model}${guessed}${blinded}${looped}`,
 			);
+			if (p.interventions?.length) {
+				lines.push(`    interventions ${p.intervention_count ?? p.interventions.length}`);
+				for (const intervention of p.interventions) {
+					lines.push(
+						`      ${intervention.kind}  ${intervention.at}  ${intervention.observed_turns}t / ${intervention.observed_tools}tools`,
+					);
+				}
+			}
 		}
 		// A `dag` supervisor has no phases by design — orchestration is its work — so
 		// flagging it here would contradict `diagnose`, which already exempts it.
