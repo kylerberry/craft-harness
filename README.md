@@ -1,6 +1,6 @@
 # CRAFTS
 
-A personal-first, distributable CRAFTS toolkit for AI coding agents. It mirrors the current global `~/.agents` CRAFTS workflow and its role agents, including bundled security review guidance — plus a DAG layer (`/decompose-to-dag`, `/execute-dag`, and the `craft-node-writer` agent) that slices multi-node work into supervised CRAFTS runs.
+A sequential phase-gate workflow for AI coding agents: `D → C → counsel → R → A → [F] → T → S`, with a DAG layer for multi-node work.
 
 ```mermaid
 flowchart LR
@@ -25,6 +25,26 @@ flowchart LR
 ```
 
 ## Contents
+
+- [Install](#install)
+- [CRAFTS at a glance](#crafts-at-a-glance)
+- [DAG workflow](#dag-workflow)
+- [Design principles](#design-principles)
+- [Typical flow](#typical-flow)
+- [Skills](#skills)
+- [Measurement and tooling](#measurement-and-tooling)
+- [Companion tooling](#companion-tooling)
+
+## Install
+
+Copy the skills and agents into a project's `.agents/` folder:
+
+```bash
+cp -R skills/* /path/to/project/.agents/skills/
+cp -R agents/* /path/to/project/.agents/agents/
+```
+
+The metrics and mutation commands live in `tooling/`, along with both host adapters: the Pi extension is installed with `pi install /path/to/crafts/tooling`, and the Claude Code adapter is a set of hooks registered with `tooling/bin/craft-hooks-install.mjs ~/.claude/settings.json`. Invoke `/craft`, `/craft-hitl`, or `/craft-lite`. `/execute-dag` requires a subagent runtime with scripted orchestration (Pi's `workflowScript`/`runs.run`).
 
 ```text
 skills/
@@ -53,15 +73,10 @@ tooling/                      # Metrics, mutation, Discovery, routing
 ├── extensions/claude-code.ts # Claude Code host adapter (hooks)
 └── package.json
 
-bin/link-global               # Author-machine live install
 CHANGELOG.md                  # Protocol and toolkit history
 ```
 
 ## CRAFTS at a glance
-
-CRAFTS is a sequential delivery workflow:
-
-`D → C → counsel → R → A → [F] → T → S`
 
 | Phase | Role | Purpose |
 | --- | --- | --- |
@@ -74,80 +89,15 @@ CRAFTS is a sequential delivery workflow:
 | **T**ighten | `craft-security-review` (different model family from R) | Bundled final-diff security review; only P0 findings block |
 | **S**harpen | conductor (inline, no spawn) | Durable documentation and process learning |
 
-| Command | Path | When |
-| --- | --- | --- |
-| `/craft` | `D → C → counsel → R → A → [F] → T → S` | Default. No gate skipped or reordered. |
-| `/craft-hitl` | Same as `/craft`, HITL Render | A `TODO(human)` seam is reserved. |
-| `/craft-lite` | `D → C → R → A → [F] → S` | Plan counsel and Tighten are out of scope (prototype, spike). |
-
 Protocol version **5**. Pass it verbatim at run start: `craft-metrics start --craft-version 5`. A missed bump mixes two workflows under one label.
 
 Every protocol runs a required Render-exit simplify pass after tests go green (tests must stay green; unrecoverable simplify is reverted) — the conductor performs it directly, not as a separate agent spawn. `/craft-lite` skips plan counsel and Tighten and uses `--mode lite`, which the metrics store enforces by rejecting `counsel`/`T` phase entries under that mode.
 
-### Discovery packet and Render delta
-
-D runs `craft-discover` (conductor, no spawn). It writes an immutable YAML packet under the OS temporary directory: authority sources, hashed task sources, Graphify `graph_status` (`current` | `stale` | `unavailable`) with candidates only when current, verified facts with citations, and evidence gaps. Graphify is never rebuilt during a run. Secrets and identity metadata are rejected before publication. C does not start without that packet. A structured blocked result naming unresolved authority stops the run.
-
-After R, `craft-delta --base <R_BASE>` records changed files, validation exit codes, and source locations without rerunning Discovery. A and T receive the delta **and** an instruction to inspect the final diff independently. F receives only the blocking-context slice of the packet.
-
-### Phase terminals and health
-
-Each advisory phase ends in exactly one structured shape: its report, or `blocked` naming the missing evidence or decision. No third outcome. Soft inspection warnings finalize from current evidence; they do not excuse skipping independent final-diff review.
-
-The conductor awaits one terminal result (`subagent_wait` on Pi; Claude Code has no equivalent and must still await the Agent return). At a configured turn-health cadence it records `craft-metrics intervene --kind health-check` and asks for current evidence, the next concrete action, and remaining uncertainty. A health check does not request completion and a healthy child continues working. No ordinary phase has a wall-clock completion deadline. Only a host-level long no-activity watchdog may interrupt an unresponsive child and record `--reason timeout` with a blocked-detail reference naming the absence of activity. Launch validation/parse/dispatch defects are `orchestration-failure` events: they do not enter a phase or consume its one retry. Timeout or model failure retries only the same role through host-configured `fallbackModels`.
-
-### Plan counsel gate and security triggers
-
-C emits `security_triggers` from a closed vocabulary (`trust-boundary-change`, `untrusted-input`, `authentication-authorization`, `secrets-sensitive-data`, `external-integration`, `file-command-execution`, `ci-deploy-permissions`, `tenant-isolation`) instead of a subjective risk score; an empty list means low-risk work.
-
-Every task then runs the **plan counsel gate** between C and R:
-
-1. The C report goes verbatim to `craft-counsel`, a single independent-model reviewer: feasibility, coherence, and scope always; security only when a trigger is declared.
-2. Any blocking finding returns the report to C, which revises once and dispositions every blocking finding: `adopted` (with the plan change) or `rejected` (with rationale).
-3. Render begins only when every blocking finding has a disposition — dispositions are the gate, not agreement. There is no counsel re-review round.
-4. The feasibility lens reports `probe_required` instead of guessing when an assumption needs execution to settle; the user supplies evidence, descopes, or confirms.
-5. Counsel findings and dispositions forward to Assess, which treats thin rejections or cosmetic adoptions as blocking findings.
-
-Tighten maps every declared trust boundary to evidence, a P0 finding, or explicit non-applicability. It returns only P0 findings as blockers; the conductor selects the project's existing memory sink for all non-P0 findings and records them directly during Sharpen — no separate agent. Security agents carry bundled review guidance with no external skill dependency. Role reports require named semantic fields; JSON is optional unless the host enforces a schema.
-
 ## DAG workflow
 
-A single CRAFTS run stays in one session. When a spec slices into several independently verifiable outcomes, decompose first and execute as a supervised DAG:
+A single CRAFTS run stays in one session. When a spec slices into several independently verifiable outcomes, decompose first and execute as a supervised DAG.
 
-```mermaid
-flowchart LR
-    SPEC["Spec / issue / request"] --> DEC["/decompose-to-dag"]
-    DEC --> DAG["dag.json (five-field nodes)"]
-    DAG --> APPROVE{"User approves"}
-    APPROVE --> EXE["/execute-dag supervisor"]
-    EXE --> WAVE["Wave barrier: max 3 nodes"]
-    WAVE --> SCRIPT["Static workflow: D, advisors, craft-node-writer"]
-    SCRIPT --> MERGE["Supervisor merges passed nodes"]
-    MERGE --> WAVE
-    MERGE --> REPORT["Final report"]
-```
-
-### `/decompose-to-dag`
-
-Turns a spec, issue, or free-form request into a validated `dag.json` written next to the work. Each node has exactly five fields — `id`, `intent`, `change_spec`, `acceptance_criteria`, `depends_on` — and one independently verifiable outcome; `depends_on` exists only where a node literally cannot be built or verified without another's output. Material uncertainty becomes a probe node whose criteria demand a durable, mergeable artifact, never a report. The skill validates the graph (unique ids, acyclic, testable criteria, no bundled outcomes, no intent smells) and runs an adversarial review pass before presenting a summary table. It stops at the artifact — implementation belongs to `/execute-dag`, and only after the user approves the DAG.
-
-### `/execute-dag`
-
-Executes an approved `dag.json` as the supervisor: it owns dispatch, merging, and reporting, and never implements node work itself.
-
-```text
-/execute-dag [--merge auto|hitl] [--protocol craft|craft-hitl|craft-lite] [dag.json]
-```
-
-- `--merge auto` (default): after a wave is terminal, merge passed nodes sequentially into the base branch, clean up their worktrees, then open the next wave.
-- `--merge hitl`: present a per-node review table (status, branch, worktree path, diffstat, evidence) and stop; nothing merges and no worktree is removed without explicit approval.
-- `--protocol` selects which CRAFTS stages the static wave script runs. Default `craft`; use `craft-hitl` only when nodes actually have `TODO(human)` seams; `craft-lite` skips Tighten.
-
-Node tasks are written as packets under the OS temporary directory and launched from the static script `tooling/src/dag-workflow.static.js`. Arbitrary node text never becomes JavaScript source. Every execution attempt runs `subagent action: validate` on that exact script first; a failed validation records orchestration failure and dispatches nothing.
-
-Dispatch is a **wave barrier**: a node is ready when every dependency is passed *and merged*; at most 3 nodes run per wave; the next wave opens only after the current one is terminal and its approved passed nodes are merged. Each node gets a supervisor-created Git worktree (`<repo>/tmp/worktree-<id>`, branch `dag/<id>`) — never a runtime-managed disposable worktree — so failed nodes stay browsable for diagnosis. An integration conflict gets exactly one re-derivation (`-attempt-2`); a failed or blocked node freezes its transitive dependents in both merge modes.
-
-Fanout is depth 1. The supervisor launches one static `workflowScript` per wave. That script runs Discovery and the protocol role agents as **direct** children (`context: "fresh"`, `acceptance: false`). Advisors are still subagents; they are siblings of the writer, not children of a conductor. `craft-node-writer` is the only writer and has no subagent tool. There is no `node-conductor`.
+The supervisor owns dispatch, merging, and reporting. It never implements node work. Fanout is depth 1: one static `workflowScript` per wave (`tooling/src/dag-workflow.static.js`) runs Discovery and the protocol role agents as **direct** children (`context: "fresh"`, `acceptance: false`). Advisors are siblings of the writer, not children of a conductor. `craft-node-writer` is the only writer and has no subagent tool. There is no `node-conductor`.
 
 ```mermaid
 flowchart TB
@@ -188,52 +138,11 @@ flowchart TB
   n3 -.->|commit on dag/n3| M
 ```
 
-### `craft-node-writer`
+Node tasks are packets under the OS temporary directory. Arbitrary node text never becomes JavaScript source. Every execution attempt runs `subagent action: validate` on that exact script first; a failed validation records orchestration failure and dispatches nothing.
 
-The `craft-node-writer` agent is the sole writer for one DAG node worktree. It applies Render, Fix, and Sharpen from the node packet and sibling advisory reports, simplifies the Render diff itself, and commits with the node id prefix (`[n3] ...`). It does not sequence CRAFTS and does not spawn anyone. Dependencies arrive as already-merged code in the worktree, never as transcripts or sibling payloads.
+Dispatch is a **wave barrier**: a node is ready when every dependency is passed *and merged*; at most 3 nodes run per wave; the next wave opens only after the current one is terminal and its approved passed nodes are merged. Each node gets a supervisor-created Git worktree (`<repo>/tmp/worktree-<id>`, branch `dag/<id>`) — never a runtime-managed disposable worktree — so failed nodes stay browsable for diagnosis. An integration conflict gets exactly one re-derivation (`-attempt-2`); a failed or blocked node freezes its transitive dependents in both merge modes.
 
-## Installation
-
-### Author-machine live install
-
-The canonical daily-development setup uses symlinks, so global agents, skills, commands, and the Pi extension all resolve to this checkout:
-
-```bash
-~/Projects/crafts/bin/link-global
-```
-
-Pass `--skip-pi` when Pi is not installed or its extension is configured separately. Edits through these links change this repository; commit here.
-
-Claude Code is the exception to "everything is a symlink". Its agent files are **generated** from `agents/*.md` into `~/.claude/agents/`, because the source files are written in Pi's frontmatter dialect (lowercase tool names, `input_schema`) — and two hand-maintained copies of an agent prompt drift, invisibly, until a reviewer behaves differently on one host than the other. `link-global` also registers the metrics hooks in `~/.claude/settings.json`, merging into whatever is already there and backing the file up first. Claude Code reads hooks at startup, so restart any open session.
-
-### Manual/project install
-
-Copy the skills and agents into a project's `.agents/` folder:
-
-```bash
-cp -R skills/* /path/to/project/.agents/skills/
-cp -R agents/* /path/to/project/.agents/agents/
-```
-
-The metrics and mutation commands live in `tooling/`, along with both host adapters: the Pi extension is installed with `pi install /path/to/crafts/tooling`, and the Claude Code adapter is a set of hooks registered with `tooling/bin/craft-hooks-install.mjs ~/.claude/settings.json`. Invoke `/craft`, `/craft-hitl`, or `/craft-lite`. `/execute-dag` requires a subagent runtime with scripted orchestration (Pi's `workflowScript`/`runs.run`).
-
-## Model routing
-
-Agent frontmatter intentionally sets **no `model`** — with one deliberate exception, noted below — because in pi frontmatter outranks `agentOverrides`, so a baked-in value would shadow each host's routing. Route per host via `subagents.agentOverrides` (or your harness's equivalent). The intended tiering:
-
-| Role | Tier | Author-machine pin |
-| --- | --- | --- |
-| C — planner | heavy | `openai-codex/gpt-5.6-sol` → `xai/grok-4.6` → `openai-codex/gpt-5.6-terra` |
-| Counsel — `craft-counsel` | medium, different family from planner | `zai/glm-5.3` |
-| R/F — builder (incl. inline simplify) | medium, different family from evaluator | `zai/glm-5.2` |
-| A — evaluator | heavy, different family from builder | `xai/grok-4.6` |
-| T — tighten | medium, different family from builder | `openai-codex/gpt-5.6-terra` |
-| S — sharpen (conductor, inline) | inherits the conductor's model — no separate tier | — |
-| DAG — `craft-node-writer` | same family as R/F builder | `zai/glm-5.2` → `moonshot/kimi-k2.7-code` |
-
-Give every pin a `fallbackModels` chain (rate-limit and overload errors walk it automatically); keeping subscription-capped providers out of primary positions and fallback-only models in the chain degrades gracefully instead of failing the phase. Configured fallbacks retry the **same role** on provider or model timeout/failure. The DAG supervisor must not pick an ad hoc replacement model.
-
-Install the Pi role routes with `craft-routes --host pi --settings ~/.pi/agent/settings.json`. Default fill leaves complete custom routes alone. `craft-routes --apply` replaces the CRAFT role routes, including `craft-node-writer`, and removes any leftover `node-conductor` override. Unrelated settings stay. Overlapping families at C→counsel, R→A, or R→T are refused. Claude Code fails explicitly. Per-command API: `tooling/*/README.md`.
+`craft-node-writer` applies Render, Fix, and Sharpen from the node packet and sibling advisory reports, simplifies the Render diff itself, and commits with the node id prefix (`[n3] ...`). It does not sequence CRAFTS and does not spawn anyone. Dependencies arrive as already-merged code in the worktree, never as transcripts or sibling payloads.
 
 ## Design principles
 
@@ -246,6 +155,127 @@ Install the Pi role routes with `craft-routes --host pi --settings ~/.pi/agent/s
 - **Knowledge compounds.** Sharpen records durable lessons without turning ordinary fixes into documentation churn.
 - **Humans own consequential judgment.** HITL reserves explicit seams for people while the agent handles surrounding implementation and verification.
 - **Phase health is observable, not prematurely terminated.** Turn-based checks record progress and remaining work without setting a completion deadline. A timeout means a long host-observed absence of activity, never merely that a phase has not yet produced its report; launch failures do not count as phase retries.
+
+## Typical flow
+
+Multi-node work is spec → DAG → supervised execution → a tour of what landed. Single-session work skips the DAG layer and starts at `/craft` (or `/craft-hitl` / `/craft-lite`).
+
+```mermaid
+flowchart LR
+    SPEC["Spec / issue / request"] --> DEC["/decompose-to-dag"]
+    DEC --> APPROVE{"Approve dag.json"}
+    APPROVE --> EXE["/execute-dag --merge hitl --protocol craft"]
+    EXE --> WAVES["Waves complete; nodes stay in worktrees"]
+    WAVES --> TOUR["/guided-tour review of waves"]
+```
+
+1. `/decompose-to-dag` turns the spec into a validated `dag.json` and stops. Approve the graph before anything runs.
+2. `/execute-dag --merge hitl --protocol craft` is the long-running step. Full CRAFTS per node, wave barrier of at most 3, and a per-node review table before any merge. Worktrees stay until you approve.
+3. `/guided-tour` after a wave (or the whole DAG) walks one landed concept at a time — what changed, who it connects with, why it matters — instead of rereading the wave report as a wall of diffs.
+
+Use `--merge auto` only when you want passed nodes merged without that pause. Use `--protocol craft-hitl` only when nodes actually have `TODO(human)` seams; `craft-lite` when counsel and Tighten are out of scope.
+
+## Skills
+
+### `/craft`
+
+Default phase-gate delivery. Always `D → C → counsel → R → A → [F] → T → S`. No gate is skipped to save time, and none is reordered. `F` runs only on a blocking finding; skipping it when A is clean is the protocol working. The conductor owns sequencing, edits, verification, and gate decisions — including the Render-exit simplify pass and Sharpen, which it performs directly rather than delegating.
+
+### `/craft-hitl`
+
+Same canonical path as `/craft`, with a mandatory human-owned seam during Render. Scaffold and test around the reserved decision, leave one specific `TODO(human)`, report the prepared context, and stop. Resume only after the human supplies the work or explicitly delegates it back; verify that contribution before completing Render. Metrics start with `--mode hitl`; each Render stop calls `craft-metrics pause`, then `resume` after the human responds.
+
+### `/craft-lite`
+
+CRAFTS without plan counsel and Tighten. Use for prototypes, spikes, or when the user says skip T. Path: `D → C → R → A → [F] → S`. Render, including the required simplify exit gate, is unchanged. Sharpen still records durable docs; it does not backfill a security review. Metrics start with `--mode lite`. The store rejects `counsel` and `T` phase entries under that mode.
+
+### `/decompose-to-dag`
+
+Turns a spec, issue, or free-form request into a validated `dag.json` written next to the work. Each node has exactly five fields — `id`, `intent`, `change_spec`, `acceptance_criteria`, `depends_on` — and one independently verifiable outcome; `depends_on` exists only where a node literally cannot be built or verified without another's output. Material uncertainty becomes a probe node whose criteria demand a durable, mergeable artifact, never a report. The skill validates the graph (unique ids, acyclic, testable criteria, no bundled outcomes, no intent smells) and runs an adversarial review pass before presenting a summary table. It stops at the artifact — implementation belongs to `/execute-dag`, and only after the user approves the DAG.
+
+```text
+/decompose-to-dag [spec | issue | request]
+```
+
+### `/execute-dag`
+
+Executes an approved `dag.json` as the supervisor: dispatch, merge, report — never node implementation.
+
+```text
+/execute-dag [--merge auto|hitl] [--protocol craft|craft-hitl|craft-lite] [dag.json]
+```
+
+- `--merge auto` (default): after a wave is terminal, merge passed nodes sequentially into the base branch, clean up their worktrees, then open the next wave.
+- `--merge hitl`: present a per-node review table (status, branch, worktree path, diffstat, evidence) and stop; nothing merges and no worktree is removed without explicit approval.
+- `--protocol` selects which CRAFTS stages the static wave script runs. Default `craft`; use `craft-hitl` only when nodes actually have `TODO(human)` seams; `craft-lite` skips Tighten.
+
+### `/guided-tour`
+
+Teaches one codebase idea per turn so the reader builds a durable mental model, not an exhaustive dump. Use after a DAG wave, on an unfamiliar area, or to walk a pattern. Treat everything after the command as the focus. Ground the explanation in an inspected excerpt under 50 lines, then stop until asked to continue. Do not turn the tour into an audit, refactor, or implementation session unless asked.
+
+```text
+/guided-tour [feature | file | symbol | pattern | question]
+```
+
+## Measurement and tooling
+
+CLIs and host adapters live in `tooling/`. Each command’s API is documented next to its name in `tooling/<tool>/README.md`.
+
+| Command | Docs | Role |
+| --- | --- | --- |
+| `craft-discover` | [tooling/discover/README.md](tooling/discover/README.md) | Deterministic Discovery evidence packet |
+| `craft-delta` | [tooling/delta/README.md](tooling/delta/README.md) | Post-Render change artifact |
+| `craft-metrics` | [tooling/metrics/README.md](tooling/metrics/README.md) | Phase-grained collector (`start` / `enter` / `exit` / `verify`) |
+| `craft-routes` | [tooling/routes/README.md](tooling/routes/README.md) | Pi role primary + `fallbackModels` installer |
+| `craft-mutate` | [tooling/mutate/README.md](tooling/mutate/README.md) | Mutation tooling |
+| `craft-agents` | [tooling/agents/README.md](tooling/agents/README.md) | Agent generation / host copies |
+| `craft-hooks-install` / `craft-hook` | [tooling/hooks/README.md](tooling/hooks/README.md) | Claude Code metrics hooks |
+
+```bash
+pi install /path/to/crafts/tooling
+```
+
+Every CRAFT run is recorded by `craft-metrics`. The conductor emits **semantics only** — never invent tokens or cost. The host adapter (Pi extension / Claude Code hooks) stamps usage onto the open phase. Pass `--craft-version 5` at `start`. Infer `--kind` from the user request (`feature`, `bugfix`, `refactor`, `scaffold`, `docs`, `chore`) and `--mode` from the skill (`full`, `hitl`, `lite`).
+
+### Model routing
+
+Agent frontmatter sets **no `model`**: in pi, frontmatter outranks `agentOverrides`, so a baked-in value would shadow each host's routing. Route per host via `subagents.agentOverrides` (or your harness's equivalent).
+
+| Role | Tier |
+| --- | --- |
+| C — planner | heavy |
+| Counsel — `craft-counsel` | medium, different family from planner |
+| R/F — builder (incl. inline simplify) | medium, different family from evaluator |
+| A — evaluator | heavy, different family from builder |
+| T — tighten | medium, different family from builder |
+| S — sharpen (conductor, inline) | inherits the conductor's model — no separate tier |
+| DAG — `craft-node-writer` | same family as R/F builder |
+
+Give every pin a `fallbackModels` chain. Configured fallbacks retry the **same role** on provider or model timeout/failure. Keep C→counsel, R→A, and R→T primary families disjoint. The DAG supervisor must not pick an ad hoc replacement model.
+
+Install the Pi role routes with `craft-routes --host pi --settings ~/.pi/agent/settings.json`. Default fill leaves complete custom routes alone. `craft-routes --apply` replaces the CRAFT role routes, including `craft-node-writer`, and removes any leftover `node-conductor` override. Unrelated settings stay. Overlapping families at C→counsel, R→A, or R→T are refused. Claude Code fails explicitly.
+
+## Companion tooling
+
+Out-of-harness tools CRAFTS reads and writes. They are not bundled. Without them D has no graph candidates, A grep-hunts weakened tests, and S has nowhere durable to land.
+
+### Graphify
+
+Discovery reads `graphify-out/graph.json` against HEAD. `graph_status` is `current`, `stale`, or `unavailable`. Candidates (path, reason, source location) emit only when current; graph claims are never facts until a cited source supports them. Graphify is never rebuilt during a run.
+
+Keep the graph current with `/graphify --update` (or a full rebuild) before a CRAFTS run if you want candidates in the packet. Stale or missing is valid — C just plans without those candidates.
+
+### Mutation testing (Stryker)
+
+`craft-mutate` scopes [Stryker](https://stryker-mutator.io/) to the Render diff. TypeScript/JavaScript only. A `stryker.config.json` at the repo root is the on-switch; without it the call returns `skipped` and A reads for weakened tests itself.
+
+Survivors are lines a test executed and did not object to. They go to A as findings to adjudicate, not a Render gate — equivalent mutants are real. Most repos have no config; that skip is normal, not a failure.
+
+### Durable document store
+
+Sharpen writes lessons and T's non-P0 findings into the project's **existing** memory sink. It does not create one, and it must not scatter notes across READMEs. Discovery already looks for `docs/wiki/index.md` plus one Markdown link whose label contains `current`.
+
+Use whatever the repo already treats as lasting: an LLM wiki, OKF, Graphify `--wiki`, or equivalent. One sink. S deduplicates existing entries and drops transient noise.
 
 ## License
 
