@@ -147,7 +147,46 @@ Node tasks are written as packets under the OS temporary directory and launched 
 
 Dispatch is a **wave barrier**: a node is ready when every dependency is passed *and merged*; at most 3 nodes run per wave; the next wave opens only after the current one is terminal and its approved passed nodes are merged. Each node gets a supervisor-created Git worktree (`<repo>/tmp/worktree-<id>`, branch `dag/<id>`) — never a runtime-managed disposable worktree — so failed nodes stay browsable for diagnosis. An integration conflict gets exactly one re-derivation (`-attempt-2`); a failed or blocked node freezes its transitive dependents in both merge modes.
 
-Fanout is depth 1. The supervisor launches one static `workflowScript` per wave. That script runs Discovery and the protocol role agents as **direct** children (`context: "fresh"`, `acceptance: false`). `craft-node-writer` is the only writer and has no subagent tool. There is no `node-conductor`.
+Fanout is depth 1. The supervisor launches one static `workflowScript` per wave. That script runs Discovery and the protocol role agents as **direct** children (`context: "fresh"`, `acceptance: false`). Advisors are still subagents; they are siblings of the writer, not children of a conductor. `craft-node-writer` is the only writer and has no subagent tool. There is no `node-conductor`.
+
+```mermaid
+flowchart TB
+  subgraph supervisor["Main session — execute-dag supervisor"]
+    S["Owns wave dispatch, git worktrees, merge, report<br/>Does not edit node files"]
+  end
+
+  subgraph wave["One workflowScript per wave — dag-workflow.static.js"]
+    W["Sequences phases in code<br/>Promise.all across ≤3 nodes"]
+  end
+
+  S -->|validate + launch, then wait| W
+
+  subgraph n2["Node n2 — tmp/worktree-n2, branch dag/n2"]
+    direction TB
+    D2["craft-discover — host command"]
+    C2["craft-planner — subagent, read-only"]
+    K2["craft-counsel — subagent, read-only"]
+    R2["craft-node-writer R — subagent, sole writer"]
+    A2["craft-evaluator — subagent, read-only"]
+    F2["craft-node-writer F — same role, only if A fails"]
+    T2["craft-security-review — subagent, read-only"]
+    S2["craft-node-writer S — same role"]
+    D2 --> C2 --> K2 --> R2 --> A2
+    A2 -->|fail| F2 --> A2
+    A2 -->|pass| T2 --> S2
+  end
+
+  subgraph n3["Node n3 — tmp/worktree-n3, branch dag/n3"]
+    direction TB
+    D3["same phase children, isolated cwd"]
+  end
+
+  W -->|"cwd = worktree-n2, parallel"| n2
+  W -->|"cwd = worktree-n3, parallel"| n3
+
+  n2 -.->|commit on dag/n2| M["Supervisor merges sequentially into base"]
+  n3 -.->|commit on dag/n3| M
+```
 
 ### `craft-node-writer`
 

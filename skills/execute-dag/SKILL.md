@@ -95,6 +95,8 @@ Launch one async `workflowScript` whose body is that static file. The script, no
 
 Fill slots from the current wave → wait for that one workflow to finish → apply the merge policy. Do not start the next wave first. Do not poll child status; the workflow await is the receipt.
 
+Wave internals (advisors are sibling subagents of the writer) are diagrammed in the repository README under **DAG workflow**.
+
 ### Merge policy
 
 When every node in the wave is terminal:
