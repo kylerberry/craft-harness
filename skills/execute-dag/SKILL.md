@@ -12,7 +12,7 @@ description: >-
 
 # execute-dag
 
-Build an approved DAG. You (this session) are the supervisor: you own dispatch, merging, and reporting. The `node-conductor` agent owns each node's protocol execution. Never implement node work yourself unless the DAG has exactly one node.
+Build an approved DAG. You (this session) are the supervisor: you own dispatch, merging, and reporting. You never implement node work. Each node is a **direct** child wave of the static workflow: Discovery, phase advisors, and one `craft-node-writer`. There is no `node-conductor`.
 
 ## Arguments
 
@@ -24,9 +24,9 @@ Parse from the invocation (skill args or the user message). Unknown flags are an
 | `--protocol` | `craft` \| `craft-hitl` \| `craft-lite` | `craft` |
 | path | `dag.json` path | `./dag.json` |
 
-`--merge` is supervisor policy. `--protocol` is passed through to every node-conductor; do not inline CRAFTS phases here.
+`--merge` is supervisor policy. `--protocol` selects which CRAFTS stages the static wave script runs. Do not re-implement those stages in this session.
 
-`--protocol craft-hitl` means every node may pause inside Render at a `TODO(human)` seam. Use it only when nodes actually have those seams. Wave-merge review is `--merge hitl` and is independent of protocol.
+`--protocol craft-hitl` means a node writer may pause inside Render at a `TODO(human)` seam. Wave-merge review is `--merge hitl` and is independent of protocol.
 
 ## Preconditions
 
@@ -45,13 +45,13 @@ RUN=$(craft-metrics start --kind scaffold --mode dag --host pi|claude-code --cwd
 
 `--craft-version` is the `craft-version` frontmatter field in `craft/SKILL.md`; pass it verbatim.
 
-`--mode dag` is not a CRAFTS protocol — it marks this session as the supervisor. You never enter a CRAFTS phase; each node-conductor opens its own run in its own worktree. Your orchestration cost (dispatch, waiting, merges, verification) is bucketed as `supervisor`, which is what makes DAG overhead comparable against the node work it coordinates. Record post-merge verification against this run, and `craft-metrics end --run "$RUN"` when the DAG is terminal.
+`--mode dag` is not a CRAFTS protocol — it marks this session as the supervisor. You never enter a CRAFTS phase. Each node gets its own CRAFTS metrics run in its worktree; the static script enters and exits those phases. Your orchestration cost (dispatch, waiting, merges, verification) is bucketed as `supervisor`. Record post-merge verification against this supervisor run, and `craft-metrics end --run "$RUN"` when the DAG is terminal.
 
 ## Dispatch model — wave barrier
 
 A node is **ready** when every `depends_on` node has status `passed` *and is merged* into the base branch.
 
-A **wave** is the full ready set at dispatch time. Dispatch at most 3 node-conductors from that set. If the wave is larger than 3, the remainder stays queued in the same wave. Do not admit newly unblocked dependents until this wave is terminal and its approved passed nodes are merged.
+A **wave** is the full ready set at dispatch time. Dispatch at most 3 nodes from that set. If the wave is larger than 3, the remainder stays queued in the same wave. Do not admit newly unblocked dependents until this wave is terminal and its approved passed nodes are merged.
 
 ### Worktree setup and launch (one per wave member, while slots remain)
 
@@ -63,24 +63,37 @@ The supervisor creates every node worktree before dispatch. Never use the subage
 - Command shape: `git worktree add -b <branch> <path> <base-head>`.
 - Refuse dispatch if the path or branch already exists unexpectedly; report it instead of deleting or reusing it.
 
-Write each node task/evidence packet with `writeNodePackets` (OS temporary directory). Pass only packet **paths** and bounded plain metadata into the static script `tooling/src/dag-workflow.static.js`. Never interpolate node intent, criteria, or other arbitrary text into JavaScript source. Packets exclude secrets. Delete packets when the DAG is terminal and successful; retain them when a node is blocked or failed.
+Write each node task/evidence packet with `writeNodePackets` (OS temporary directory). Before launch, open one CRAFTS metrics run per wave member in that worktree:
 
-Before every execution attempt, run `subagent` `action: validate` on that **exact** `workflowScript`. A validation, parse, or dispatch defect stops launch: record `craft-metrics orchestration-failure`, dispatch no node-conductor, and consume no node or CRAFT phase attempt. Execution proceeds only after the orchestration defect is corrected and validation succeeds again.
-
-```
-runs.run(`node-${id}`, {
-  agent: "node-conductor",
-  model: "inherit",
-  cwd: <meta.repo>/tmp/worktree-<id>,
-  worktree: false,
-  skill: <protocol>,
-  task: <path to the node packet under the OS temp dir>
-})
+```bash
+NODE_RUN=$(craft-metrics start --kind feature --mode full|hitl|lite --host pi|claude-code --cwd "<worktree>" --craft-version 5)
 ```
 
-`model: "inherit"` pins the conductor to the current parent session model, even when cached agent overrides differ. `worktree: false` is intentional: the supervisor-created Git worktree already provides isolation, and runtime-managed worktrees are automatically removed. Each node still has one isolated writer.
+Use `--mode lite` only for `--protocol craft-lite`, and `--mode hitl` only for `--protocol craft-hitl`.
 
-Run one wave through `workflowScript`. Fill slots from the current wave → wait for completions → repeat until every node in that wave is terminal. Then apply the merge policy. Do not start the next wave first.
+Pass only packet **paths** and bounded env into the static script `tooling/src/dag-workflow.static.js`:
+
+| Env | Value |
+| --- | --- |
+| `PACKET_DIR` | directory returned by `writeNodePackets` |
+| `NODE_IDS` | comma-separated wave ids, at most 3 |
+| `PROTOCOL` | `craft` \| `craft-hitl` \| `craft-lite` |
+| `NODE_WORKTREES` | `id=/abs/worktree;id2=/abs/worktree` |
+| `NODE_RUNS` | `id=<metrics-run-id>;id2=<metrics-run-id>` |
+
+Never interpolate node intent, criteria, or other arbitrary text into JavaScript source. Packets exclude secrets. Delete packets when the DAG is terminal and successful; retain them when a node is blocked or failed.
+
+Before every execution attempt, run `subagent` `action: validate` on that **exact** `workflowScript`. A validation, parse, or dispatch defect stops launch: record `craft-metrics orchestration-failure`, dispatch no node, and consume no node or CRAFT phase attempt. Execution proceeds only after the orchestration defect is corrected and validation succeeds again.
+
+Launch one async `workflowScript` whose body is that static file. The script, not this session, sequences D → C → counsel → R → A → [F] → T → S as **direct** children:
+
+- `craft-discover` via `runs.host`
+- `craft-planner`, `craft-counsel`, `craft-evaluator`, `craft-security-review` with `context: "fresh"` and `acceptance: false`
+- `craft-node-writer` as the sole writer (`worktree: false`, `cwd` is the supervisor-created Git worktree, `acceptance: false`)
+
+`craft-lite` omits counsel and T inside the script. Do not spawn `craft-builder` or `node-conductor`. Do not give any child the `subagent` tool beyond what its agent file already allows — writers and advisors must not launch further agents.
+
+Fill slots from the current wave → wait for that one workflow to finish → apply the merge policy. Do not start the next wave first. Do not poll child status; the workflow await is the receipt.
 
 ### Merge policy
 
@@ -116,21 +129,24 @@ Failed/blocked nodes still freeze all transitive dependents in both modes. Never
 
 ### On node result
 
-- **passed** → eligible to merge under the merge policy above. Not merged until the wave gate says so.
+The static script returns per-id `{ status: "passed" | "failed" }` without throwing the sibling nodes.
+
+- **passed** → eligible to merge under the merge policy above. Not merged until the wave gate says so. `craft-metrics end --run "$NODE_RUN" --outcome completed`.
 - **integration-failed** (merge conflict, or base verification red after the merge) → undo the merge, then re-dispatch that node once against the new head (`attempt 2` in the key); a second failure freezes it and reports.
-- **blocked/failed** → freeze transitive dependents immediately; do not wait for the wave gate.
+- **blocked/failed** → freeze transitive dependents immediately; `craft-metrics end --run "$NODE_RUN" --outcome blocked` or `failed`. Do not wait for the wave gate.
 - No automatic retry beyond the single re-derivation above. Failures surface to the user.
 
 ## Hard constraints
 
-1. **One writer per worktree.** Every node-conductor gets a distinct supervisor-created Git worktree under `<meta.repo>/tmp/` and launches with that path as `cwd`. Never share a tree between nodes or ask the runtime to wrap it in another worktree.
-2. **Depth 2, no deeper.** node-conductor is the only child you launch with the subagent tool. Conductors may spawn only protocol-directed phase agents (`craft-planner`, `craft-counsel`, `craft-builder`, `craft-evaluator`, `craft-security-review`). `craft-lite` must not spawn `craft-counsel` or `craft-security-review`. Render-exit simplify and Sharpen are performed by the conductor directly — never spawned. Anything else fails the node.
-3. **Dependencies are merged code, not context.** A node's payload contains its own spec and the run protocol only — never the DAG, sibling payloads, or other nodes' transcripts.
-4. **Do not override phase model routing.** The conductor inherits the parent model. Protocol-directed CRAFTS children use each phase agent's configured primary model and ordered fallbacks. The supervisor and conductor never invent, reorder, or manually switch those models. An exhausted configured fallback chain is a failed model result: report and freeze.
-5. **Merge-back is yours.** Conductors commit in their worktree; only the supervisor merges into the base branch.
-6. **Do not put `--merge` or `--protocol` on dag.json nodes.** Those are run policy.
+1. **One writer per worktree.** Every node gets a distinct supervisor-created Git worktree under `<meta.repo>/tmp/` and the writer launches with that path as `cwd`. Never share a tree between nodes or ask the runtime to wrap it in another worktree.
+2. **Depth 1, no deeper.** This session launches only the static wave workflow. That workflow launches only protocol role agents and host Discovery. `craft-node-writer` has no subagent tool. Anything else fails the node.
+3. **Dependencies are merged code, not context.** A node's packet contains its own spec and the run protocol only — never the DAG, sibling payloads, or other nodes' transcripts.
+4. **Do not override phase model routing.** Protocol-directed CRAFTS children use each phase agent's configured primary model and ordered fallbacks. The supervisor never invents, reorders, or manually switches those models. An exhausted configured fallback chain is a failed model result: report and freeze.
+5. **Fresh context, no implementation acceptance on children.** Advisors and the writer launch with `context: "fresh"` and `acceptance: false`. Forking this session into a node is an orchestration defect.
+6. **Merge-back is yours.** The writer commits in its worktree; only the supervisor merges into the base branch.
+7. **Do not put `--merge` or `--protocol` on dag.json nodes.** Those are run policy.
 
 ## Result reporting (final)
 
 | node | status | wave | attempts | worktree path | changed files | evidence |
-plus: retained worktree list, frozen subtree list with blocking cause, merge order, merge mode, protocol, total tokens/cost if available, and recommended next actions (fix, re-decompose, manual intervention). Discovered work reported by conductors is summarized for the user — never silently implemented.
+plus: retained worktree list, frozen subtree list with blocking cause, merge order, merge mode, protocol, total tokens/cost if available, and recommended next actions (fix, re-decompose, manual intervention). Discovered work reported by writers is summarized for the user — never silently implemented.

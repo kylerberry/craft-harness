@@ -52,6 +52,7 @@ export const AGENT_PHASE: Record<string, PhaseName> = {
 	"craft-planner": "C",
 	"craft-counsel": "counsel",
 	"craft-builder": "R",
+	"craft-node-writer": "R",
 	"craft-code-simplifier": "R",
 	"craft-evaluator": "A",
 	"craft-security-review": "T",

@@ -220,7 +220,7 @@ Pass the decision record, not the Render transcript. A transcript is mostly auth
 
 **Compose A's payload blind.** Different-family routing removes same-model self-preference; it does not remove the larger effect, which is that naming an author shifts the verdict on identical code. Use role-neutral vocabulary — "the approved plan", "prior plan-review findings", "the change set" — and keep these out of the payload entirely:
 
-- `craft-*` agent names other than the reviewer's own, and `node-conductor`
+- `craft-*` agent names other than the reviewer's own
 - model or provider ids (`zai/glm-5.2`, `grok-4.6`)
 - DAG identity: `[nN]` commit prefixes, `dag/nN` branches, `worktree-nN` paths
 - first-person attribution ("I chose", "the builder decided")

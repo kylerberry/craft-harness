@@ -26,11 +26,11 @@ test("installer fills missing CRAFT role routes without touching unrelated setti
 	const { settings, changed } = installRoutes(before, "pi");
 	assert.equal(settings.theme, "dark");
 	assert.deepEqual(settings.subagents?.modelScope, { enforce: true });
-	assert.deepEqual(settings.subagents?.agentOverrides?.["node-conductor"], { model: "inherit" });
+	assert.equal("node-conductor" in (settings.subagents?.agentOverrides ?? {}), false);
 	for (const role of PHASE_ROLES) {
 		assert.deepEqual(settings.subagents?.agentOverrides?.[role], DEFAULT_ROUTES[role]);
 	}
-	assert.deepEqual(changed.sort(), [...PHASE_ROLES].sort());
+	assert.deepEqual(changed.sort(), [...PHASE_ROLES, "node-conductor"].sort());
 	assert.equal(before.subagents?.agentOverrides?.["craft-builder"], undefined, "input is not mutated");
 });
 
@@ -46,7 +46,7 @@ test("re-running is idempotent and preserves valid user-supplied routes", () => 
 	assert.deepEqual(twice.settings, once);
 });
 
-test("--apply replaces CRAFT role routes and pins node-conductor inherit", () => {
+test("--apply replaces CRAFT role routes and removes node-conductor", () => {
 	const before = {
 		theme: "dark",
 		packages: ["npm:pi-multi-account"],
@@ -64,7 +64,7 @@ test("--apply replaces CRAFT role routes and pins node-conductor inherit", () =>
 	assert.deepEqual(settings.packages, ["npm:pi-multi-account"]);
 	assert.deepEqual(settings.subagents?.modelScope, { enforce: true });
 	assert.deepEqual(settings.subagents?.agentOverrides?.["unrelated-agent"], { model: "xai/grok-4.6" });
-	assert.deepEqual(settings.subagents?.agentOverrides?.["node-conductor"], { model: "inherit" });
+	assert.equal("node-conductor" in (settings.subagents?.agentOverrides ?? {}), false);
 	for (const role of PHASE_ROLES) {
 		assert.deepEqual(settings.subagents?.agentOverrides?.[role], DEFAULT_ROUTES[role]);
 	}

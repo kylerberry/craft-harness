@@ -4,7 +4,8 @@ Protocol versions follow `craft-version` in `skills/craft/SKILL.md`. Bump when a
 
 ## [Unreleased]
 
-- `craft-routes --apply` replaces the five CRAFT role routes and pins `node-conductor` inherit; default fill still preserves complete custom routes.
+- DAG execution is depth 1: `/execute-dag` launches a static wave workflow of Discovery, phase advisors, and `craft-node-writer`. `node-conductor` is removed.
+- `craft-routes --apply` replaces CRAFT role routes including `craft-node-writer` and deletes leftover `node-conductor` overrides; default fill still preserves complete custom routes.
 - Role defaults: C `sol→grok-4.6`, counsel `glm-5.3→kimi-k3`, R `glm-5.2→kimi-k2.7-code`, A `grok-4.6→sol`, T `terra→grok-4.3`.
 - Per-CLI API docs under `tooling/<tool>/README.md`.
 
@@ -27,7 +28,7 @@ Discovery is a real gate. Advisory phases must finish. Launch defects are not ph
 ### Changed
 
 - Canonical sequence is `D → C → counsel → R → A → [F] → T → S` (lite: `D → C → R → A → [F] → S`).
-- Node-conductor runs D before C, slices the packet per role, appends the Render delta for A and T, enters a phase only after a launch receipt, and treats validation/parse/dispatch failures as orchestration defects that do not consume the one terminal-phase retry.
+- DAG nodes run D before C. Validation/parse/dispatch failures are orchestration defects that do not consume a node or CRAFT phase attempt.
 - Timeout or model failure retries only the same role through host-configured fallbacks. Conductors do not select a model id.
 - Metrics inference: an entered D phase marks v5. v4 fingerprints still apply when D is absent.
 

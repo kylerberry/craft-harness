@@ -1,6 +1,6 @@
 # CRAFTS
 
-A personal-first, distributable CRAFTS toolkit for AI coding agents. It mirrors the current global `~/.agents` CRAFTS workflow and its role agents, including bundled security review guidance — plus a DAG layer (`/decompose-to-dag`, `/execute-dag`, and the `node-conductor` agent) that slices multi-node work into supervised CRAFTS runs.
+A personal-first, distributable CRAFTS toolkit for AI coding agents. It mirrors the current global `~/.agents` CRAFTS workflow and its role agents, including bundled security review guidance — plus a DAG layer (`/decompose-to-dag`, `/execute-dag`, and the `craft-node-writer` agent) that slices multi-node work into supervised CRAFTS runs.
 
 ```mermaid
 flowchart LR
@@ -42,7 +42,7 @@ agents/
 ├── craft-code-simplifier.md  # Standalone simplify pass (not spawned by CRAFTS — Render does this inline)
 ├── craft-evaluator.md        # A — Assess
 ├── craft-security-review.md  # T — Tighten final-diff review (P0 gate)
-└── node-conductor.md         # Conducts one DAG node through a CRAFTS protocol
+└── craft-node-writer.md      # Sole writer for one DAG node worktree
 
 tooling/                      # Metrics, mutation, Discovery, routing
 ├── bin/craft-discover.mjs    # Deterministic evidence packet
@@ -120,9 +120,9 @@ flowchart LR
     DEC --> DAG["dag.json (five-field nodes)"]
     DAG --> APPROVE{"User approves"}
     APPROVE --> EXE["/execute-dag supervisor"]
-    EXE --> WAVE["Wave barrier: max 3 node-conductors"]
-    WAVE --> NC["node-conductor runs a CRAFTS protocol per node"]
-    NC --> MERGE["Supervisor merges passed nodes"]
+    EXE --> WAVE["Wave barrier: max 3 nodes"]
+    WAVE --> SCRIPT["Static workflow: D, advisors, craft-node-writer"]
+    SCRIPT --> MERGE["Supervisor merges passed nodes"]
     MERGE --> WAVE
     MERGE --> REPORT["Final report"]
 ```
@@ -141,15 +141,17 @@ Executes an approved `dag.json` as the supervisor: it owns dispatch, merging, an
 
 - `--merge auto` (default): after a wave is terminal, merge passed nodes sequentially into the base branch, clean up their worktrees, then open the next wave.
 - `--merge hitl`: present a per-node review table (status, branch, worktree path, diffstat, evidence) and stop; nothing merges and no worktree is removed without explicit approval.
-- `--protocol` passes through to every node-conductor. Default `craft`; use `craft-hitl` only when nodes actually have `TODO(human)` seams; `craft-lite` skips Tighten.
+- `--protocol` selects which CRAFTS stages the static wave script runs. Default `craft`; use `craft-hitl` only when nodes actually have `TODO(human)` seams; `craft-lite` skips Tighten.
 
 Node tasks are written as packets under the OS temporary directory and launched from the static script `tooling/src/dag-workflow.static.js`. Arbitrary node text never becomes JavaScript source. Every execution attempt runs `subagent action: validate` on that exact script first; a failed validation records orchestration failure and dispatches nothing.
 
-Dispatch is a **wave barrier**: a node is ready when every dependency is passed *and merged*; at most 3 node-conductors run per wave; the next wave opens only after the current one is terminal and its approved passed nodes are merged. Each node gets a supervisor-created Git worktree (`<repo>/tmp/worktree-<id>`, branch `dag/<id>`) — never a runtime-managed disposable worktree — so failed nodes stay browsable for diagnosis. An integration conflict gets exactly one re-derivation (`-attempt-2`); a failed or blocked node freezes its transitive dependents in both merge modes.
+Dispatch is a **wave barrier**: a node is ready when every dependency is passed *and merged*; at most 3 nodes run per wave; the next wave opens only after the current one is terminal and its approved passed nodes are merged. Each node gets a supervisor-created Git worktree (`<repo>/tmp/worktree-<id>`, branch `dag/<id>`) — never a runtime-managed disposable worktree — so failed nodes stay browsable for diagnosis. An integration conflict gets exactly one re-derivation (`-attempt-2`); a failed or blocked node freezes its transitive dependents in both merge modes.
 
-### `node-conductor`
+Fanout is depth 1. The supervisor launches one static `workflowScript` per wave. That script runs Discovery and the protocol role agents as **direct** children (`context: "fresh"`, `acceptance: false`). `craft-node-writer` is the only writer and has no subagent tool. There is no `node-conductor`.
 
-The `node-conductor` agent conducts exactly one DAG node end-to-end. It loads the named protocol skill (`craft`, `craft-hitl`, or `craft-lite`), runs Discovery before C, spawns each directed phase agent sequentially, awaits one terminal result per phase, executes the implementation itself in its worktree — performing the required R-exit simplify pass and Sharpen directly, never as a spawn — and commits with the node id prefix (`[n3] ...`). Advisory roles receive packet slices, not the whole packet; A and T also get the Render delta. Fanout is depth 2: the supervisor launches only node-conductors, and a conductor launches only protocol phase agents. Dependencies arrive as already-merged code in the worktree, never as transcripts or sibling payloads. `craft-lite` nodes never spawn `craft-counsel` or `craft-security-review`.
+### `craft-node-writer`
+
+The `craft-node-writer` agent is the sole writer for one DAG node worktree. It applies Render, Fix, and Sharpen from the node packet and sibling advisory reports, simplifies the Render diff itself, and commits with the node id prefix (`[n3] ...`). It does not sequence CRAFTS and does not spawn anyone. Dependencies arrive as already-merged code in the worktree, never as transcripts or sibling payloads.
 
 ## Installation
 
@@ -188,13 +190,11 @@ Agent frontmatter intentionally sets **no `model`** — with one deliberate exce
 | A — evaluator | heavy, different family from builder | `xai/grok-4.6` |
 | T — tighten | medium, different family from builder | `openai-codex/gpt-5.6-terra` |
 | S — sharpen (conductor, inline) | inherits the conductor's model — no separate tier | — |
-| DAG — `node-conductor` | medium, pinned (see below) | `openai-codex/gpt-5.6-terra` |
+| DAG — `craft-node-writer` | same family as R/F builder | `zai/glm-5.2` → `moonshot/kimi-k2.7-code` |
 
-`node-conductor` is the one deliberate exception to that rule: its frontmatter pins `openai-codex/gpt-5.6-terra` so every DAG node gets the same conductor regardless of host overrides — it is a node's sole orchestrator and sole writer, not an advisory lens a host should re-tier per phase.
+Give every pin a `fallbackModels` chain (rate-limit and overload errors walk it automatically); keeping subscription-capped providers out of primary positions and fallback-only models in the chain degrades gracefully instead of failing the phase. Configured fallbacks retry the **same role** on provider or model timeout/failure. The DAG supervisor must not pick an ad hoc replacement model.
 
-Give every pin a `fallbackModels` chain (rate-limit and overload errors walk it automatically); keeping subscription-capped providers out of primary positions and fallback-only models in the chain degrades gracefully instead of failing the phase. Configured fallbacks retry the **same role** on provider or model timeout/failure. Conductors must not pick an ad hoc replacement model.
-
-Install the Pi role routes with `craft-routes --host pi --settings ~/.pi/agent/settings.json`. Default fill leaves complete custom routes alone. `craft-routes --apply` replaces the five CRAFT roles and pins `node-conductor` to inherit from repo defaults. Unrelated settings stay. Overlapping families at C→counsel, R→A, or R→T are refused. Claude Code fails explicitly. Per-command API: `tooling/*/README.md`.
+Install the Pi role routes with `craft-routes --host pi --settings ~/.pi/agent/settings.json`. Default fill leaves complete custom routes alone. `craft-routes --apply` replaces the CRAFT role routes, including `craft-node-writer`, and removes any leftover `node-conductor` override. Unrelated settings stay. Overlapping families at C→counsel, R→A, or R→T are refused. Claude Code fails explicitly. Per-command API: `tooling/*/README.md`.
 
 ## Design principles
 

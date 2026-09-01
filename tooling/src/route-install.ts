@@ -9,11 +9,10 @@ export const DEFAULT_ROUTES: Record<string, RoleRoute> = {
 	"craft-planner": { model: "openai-codex/gpt-5.6-sol", fallbackModels: ["xai/grok-4.6", "openai-codex/gpt-5.6-terra"] },
 	"craft-counsel": { model: "zai/glm-5.3", fallbackModels: ["moonshot/kimi-k3"] },
 	"craft-builder": { model: "zai/glm-5.2", fallbackModels: ["moonshot/kimi-k2.7-code"] },
+	"craft-node-writer": { model: "zai/glm-5.2", fallbackModels: ["moonshot/kimi-k2.7-code"] },
 	"craft-evaluator": { model: "xai/grok-4.6", fallbackModels: ["openai-codex/gpt-5.6-sol"] },
 	"craft-security-review": { model: "openai-codex/gpt-5.6-terra", fallbackModels: ["xai/grok-4.3"] },
 };
-
-export const CONDUCTOR_OVERRIDE = { model: "inherit" } as const;
 
 export const PHASE_ROLES = Object.keys(DEFAULT_ROUTES);
 
@@ -53,11 +52,12 @@ export function validateSeams(overrides: Record<string, RoleRoute>): void {
 	const c = familiesOf(overrides["craft-planner"]);
 	const counsel = familiesOf(overrides["craft-counsel"]);
 	const r = familiesOf(overrides["craft-builder"]);
+	const writer = familiesOf(overrides["craft-node-writer"] ?? overrides["craft-builder"]);
 	const a = familiesOf(overrides["craft-evaluator"]);
 	const t = familiesOf(overrides["craft-security-review"]);
 	if (!disjoint(c, counsel)) throw new RouteError("C→counsel family sets overlap");
-	if (!disjoint(r, a)) throw new RouteError("R→A family sets overlap");
-	if (!disjoint(r, t)) throw new RouteError("R→T family sets overlap");
+	if (!disjoint(r, a) || !disjoint(writer, a)) throw new RouteError("R→A family sets overlap");
+	if (!disjoint(r, t) || !disjoint(writer, t)) throw new RouteError("R→T family sets overlap");
 }
 
 export interface Settings {
@@ -92,9 +92,8 @@ export function installRoutes(
 		overrides[role] = structuredClone(DEFAULT_ROUTES[role]);
 		changed.push(role);
 	}
-	const conductor = overrides["node-conductor"];
-	if (!conductor || typeof conductor !== "object" || (conductor as { model?: unknown }).model !== "inherit") {
-		overrides["node-conductor"] = { ...CONDUCTOR_OVERRIDE };
+	if ("node-conductor" in overrides) {
+		delete overrides["node-conductor"];
 		changed.push("node-conductor");
 	}
 	const roleRoutes = Object.fromEntries(PHASE_ROLES.map((role) => [role, overrides[role] as RoleRoute]));

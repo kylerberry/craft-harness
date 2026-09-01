@@ -1,7 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyWorkflowValidation, cleanupPackets, STATIC_WORKFLOW, workflowValidateCall, writeNodePackets } from "../src/dag-launch.ts";
@@ -43,6 +42,9 @@ test("execute-dag requires subagent validate on the static script before executi
 	assert.match(skill, /exact.*workflowScript|workflowScript.*exact/i);
 	assert.match(skill, /orchestration-failure/);
 	assert.match(skill, /consume no node or CRAFT phase attempt/i);
+	assert.match(skill, /craft-node-writer/);
+	assert.match(skill, /Depth 1/);
+	assert.doesNotMatch(skill, /agent:\s*"node-conductor"/);
 });
 
 test("validates the exact static workflow script before every execution attempt", () => {
@@ -63,8 +65,15 @@ test("writes packets under the OS temp dir and keeps the workflow script static"
 		const js = readFileSync(scriptPath, "utf8");
 		assert.doesNotMatch(js, /process\.exit\(1\)/);
 		assert.doesNotMatch(js, /and more/);
-		const parsed = spawnSync(process.execPath, ["--check", scriptPath], { encoding: "utf8" });
-		assert.equal(parsed.status, 0, parsed.stderr);
+		assert.match(js, /craft-node-writer/);
+		assert.match(js, /Promise\.all/);
+		assert.doesNotMatch(js, /node-conductor/);
+		assert.match(js, /acceptance: false/);
+		assert.match(js, /context: "fresh"/);
+		assert.match(js, /craft-lite/);
+		assert.doesNotMatch(js, /async function/);
+		assert.doesNotMatch(js, /async \(/);
+		assert.doesNotThrow(() => new Function("runs", "emit", "process", `return (async () => {\n${js}\n})();`));
 		const packet = JSON.parse(readFileSync(join(packetDir, "n1.json"), "utf8"));
 		assert.equal(packet.intent, task);
 	} finally {

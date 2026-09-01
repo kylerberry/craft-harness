@@ -29,8 +29,8 @@ const AGENT_ROLE: Array<[RegExp, string]> = [
 	[/\bcraft-plan-(?:feasibility|scope|security)\b/gi, "plan review"],
 	[/\bcraft-code-simplifier\b/gi, "the cleanup step"],
 	[/\bcraft-builder\b/gi, "the implementation step"],
+	[/\bcraft-node-writer\b/gi, "the implementation step"],
 	[/\bcraft-sharpener\b/gi, "the documentation step"],
-	[/\bnode-conductor\b/gi, "the conductor"],
 ];
 
 /**
