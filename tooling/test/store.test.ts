@@ -284,22 +284,40 @@ test("seams detect same-family collapse and cross-family pass", () => {
 	try {
 		const run = s.openRun({ host: "pi", cwd: "/tmp/demo", repo: "demo", mode: "full" });
 		s.enterPhase(run.run_id, "C");
-		s.recordUsage(run.run_id, { model: "zai/glm-5.2" });
+		s.recordUsage(run.run_id, { model: "zai/glm-5.2", subagent: true });
 		s.exitPhase(run.run_id, "C");
 		s.enterPhase(run.run_id, "counsel");
-		s.recordUsage(run.run_id, { model: "zai/glm-5.2" });
+		s.recordUsage(run.run_id, { model: "zai/glm-5.2", subagent: true });
 		s.exitPhase(run.run_id, "counsel");
 		s.enterPhase(run.run_id, "R");
-		s.recordUsage(run.run_id, { model: "zai/glm-5.2" });
+		s.recordUsage(run.run_id, { model: "zai/glm-5.2", subagent: true });
 		s.exitPhase(run.run_id, "R");
 		s.enterPhase(run.run_id, "A");
-		s.recordUsage(run.run_id, { model: "xai/grok-4.6" });
+		s.recordUsage(run.run_id, { model: "xai/grok-4.6", subagent: true });
 		s.exitPhase(run.run_id, "A", { verdict: "pass" });
 		const got = s.get(run.run_id)!;
 		assert.equal(got.seams.counsel_family_differs_from_c, false);
 		assert.equal(got.seams.a_family_differs_from_r, true);
 		assert.equal(got.seams.t_family_differs_from_r, null);
 		assert.deepEqual(computeSeams(got), got.seams);
+	} finally {
+		cleanup();
+	}
+});
+
+test("seams ignore conductor models and stay unmeasured without child usage", () => {
+	const { store: s, cleanup } = tmpStore();
+	try {
+		const run = s.openRun({ host: "pi", cwd: "/tmp/demo", repo: "demo", mode: "full" });
+		s.enterPhase(run.run_id, "C");
+		s.recordUsage(run.run_id, { model: "xai/grok-4.6", subagent: false });
+		s.exitPhase(run.run_id, "C");
+		s.enterPhase(run.run_id, "counsel");
+		s.recordUsage(run.run_id, { model: "xai/grok-4.6", subagent: false });
+		s.exitPhase(run.run_id, "counsel");
+		const got = s.get(run.run_id)!;
+		assert.equal(got.seams.counsel_family_differs_from_c, null);
+		assert.deepEqual(got.phases.find((p) => p.name === "C")!.child_models, []);
 	} finally {
 		cleanup();
 	}

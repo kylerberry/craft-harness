@@ -5,13 +5,15 @@ export type RoleRoute = {
 	fallbackModels: string[];
 };
 
+const MOONSHOT = "moonshot/kimi-k2.7-code";
+
 export const DEFAULT_ROUTES: Record<string, RoleRoute> = {
-	"craft-planner": { model: "openai-codex/gpt-5.6-sol", fallbackModels: ["xai/grok-4.6", "openai-codex/gpt-5.6-terra"] },
-	"craft-counsel": { model: "zai/glm-5.3", fallbackModels: ["moonshot/kimi-k3"] },
-	"craft-builder": { model: "zai/glm-5.2", fallbackModels: ["moonshot/kimi-k2.7-code"] },
-	"craft-node-writer": { model: "zai/glm-5.2", fallbackModels: ["moonshot/kimi-k2.7-code"] },
-	"craft-evaluator": { model: "xai/grok-4.6", fallbackModels: ["openai-codex/gpt-5.6-sol"] },
-	"craft-security-review": { model: "openai-codex/gpt-5.6-terra", fallbackModels: ["xai/grok-4.3"] },
+	"craft-planner": { model: "openai-codex/gpt-5.6-sol", fallbackModels: ["xai/grok-4.6", "zai/glm-5.2", MOONSHOT] },
+	"craft-counsel": { model: "zai/glm-5.3", fallbackModels: ["openai-codex/gpt-5.6-sol", "xai/grok-4.6", MOONSHOT] },
+	"craft-builder": { model: "zai/glm-5.2", fallbackModels: ["xai/grok-4.6", "openai-codex/gpt-5.6-sol", MOONSHOT] },
+	"craft-node-writer": { model: "zai/glm-5.2", fallbackModels: ["xai/grok-4.6", "openai-codex/gpt-5.6-sol", MOONSHOT] },
+	"craft-evaluator": { model: "xai/grok-4.6", fallbackModels: ["openai-codex/gpt-5.6-sol", "zai/glm-5.2", MOONSHOT] },
+	"craft-security-review": { model: "openai-codex/gpt-5.6-terra", fallbackModels: ["xai/grok-4.6", "zai/glm-5.2", MOONSHOT] },
 };
 
 export const PHASE_ROLES = Object.keys(DEFAULT_ROUTES);
@@ -21,19 +23,6 @@ export class RouteError extends Error {}
 export function modelFamily(model: string): string {
 	const i = model.indexOf("/");
 	return i === -1 ? model : model.slice(0, i);
-}
-
-function roleModels(route: RoleRoute): string[] {
-	return [route.model, ...route.fallbackModels];
-}
-
-function familiesOf(route: RoleRoute): Set<string> {
-	return new Set(roleModels(route).map(modelFamily));
-}
-
-function disjoint(a: Set<string>, b: Set<string>): boolean {
-	for (const f of a) if (b.has(f)) return false;
-	return true;
 }
 
 function isCompleteRoute(value: unknown): value is RoleRoute {
@@ -48,16 +37,34 @@ function isCompleteRoute(value: unknown): value is RoleRoute {
 	);
 }
 
+function primaryFamily(route: RoleRoute | undefined): string {
+	if (!route) return "";
+	return modelFamily(route.model);
+}
+
+function assertMoonshotLast(role: string, route: RoleRoute): void {
+	if (modelFamily(route.model) === "moonshot") throw new RouteError(`${role} must not use moonshot as primary`);
+	const index = route.fallbackModels.findIndex((model) => modelFamily(model) === "moonshot");
+	if (index === -1) return;
+	if (!route.fallbackModels.slice(index).every((model) => modelFamily(model) === "moonshot")) {
+		throw new RouteError(`${role}: moonshot must be last in fallbackModels`);
+	}
+}
+
 export function validateSeams(overrides: Record<string, RoleRoute>): void {
-	const c = familiesOf(overrides["craft-planner"]);
-	const counsel = familiesOf(overrides["craft-counsel"]);
-	const r = familiesOf(overrides["craft-builder"]);
-	const writer = familiesOf(overrides["craft-node-writer"] ?? overrides["craft-builder"]);
-	const a = familiesOf(overrides["craft-evaluator"]);
-	const t = familiesOf(overrides["craft-security-review"]);
-	if (!disjoint(c, counsel)) throw new RouteError("C→counsel family sets overlap");
-	if (!disjoint(r, a) || !disjoint(writer, a)) throw new RouteError("R→A family sets overlap");
-	if (!disjoint(r, t) || !disjoint(writer, t)) throw new RouteError("R→T family sets overlap");
+	for (const role of PHASE_ROLES) {
+		const route = overrides[role];
+		if (route) assertMoonshotLast(role, route);
+	}
+	const c = primaryFamily(overrides["craft-planner"]);
+	const counsel = primaryFamily(overrides["craft-counsel"]);
+	const r = primaryFamily(overrides["craft-builder"]);
+	const writer = primaryFamily(overrides["craft-node-writer"] ?? overrides["craft-builder"]);
+	const a = primaryFamily(overrides["craft-evaluator"]);
+	const t = primaryFamily(overrides["craft-security-review"]);
+	if (c && counsel && c === counsel) throw new RouteError("C→counsel primary families overlap");
+	if ((r && a && r === a) || (writer && a && writer === a)) throw new RouteError("R→A primary families overlap");
+	if ((r && t && r === t) || (writer && t && writer === t)) throw new RouteError("R→T primary families overlap");
 }
 
 export interface Settings {

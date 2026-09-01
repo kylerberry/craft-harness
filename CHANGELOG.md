@@ -6,7 +6,8 @@ Protocol versions follow `craft-version` in `skills/craft/SKILL.md`. Bump when a
 
 - DAG execution is depth 1: `/execute-dag` launches a static wave workflow of Discovery, phase advisors, and `craft-node-writer`. `node-conductor` is removed.
 - `craft-routes --apply` replaces CRAFT role routes including `craft-node-writer` and deletes leftover `node-conductor` overrides; default fill still preserves complete custom routes.
-- Role defaults: C `sol→grok-4.6`, counsel `glm-5.3→kimi-k3`, R `glm-5.2→kimi-k2.7-code`, A `grok-4.6→sol`, T `terra→grok-4.3`.
+- Role defaults: primary families stay disjoint; fallbacks may overlap; order is openai-codex → xai → zai → moonshot last. Moonshot is never a primary. Failover can collapse diversity.
+- Pi metrics: drop cached `runId` after `run_end`; bill child spend from the `subagent` tool result (children disable ambient extensions); seams use child models and stay `?` when unmeasured.
 - Per-CLI API docs under `tooling/<tool>/README.md`.
 
 ## [5] — 2026-08-31

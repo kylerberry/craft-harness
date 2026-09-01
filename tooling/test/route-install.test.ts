@@ -74,28 +74,44 @@ test("--apply replaces CRAFT role routes and removes node-conductor", () => {
 	assert.deepEqual(again.changed, []);
 });
 
-test("planner has a preconfigured second fallback without overlapping counsel", () => {
-	assert.deepEqual(DEFAULT_ROUTES["craft-planner"].fallbackModels, ["xai/grok-4.6", "openai-codex/gpt-5.6-terra"]);
+test("planner fallbacks prefer xai then zai with moonshot last", () => {
+	assert.deepEqual(DEFAULT_ROUTES["craft-planner"].fallbackModels, ["xai/grok-4.6", "zai/glm-5.2", "moonshot/kimi-k2.7-code"]);
 	assert.doesNotThrow(() => validateSeams(DEFAULT_ROUTES));
 });
 
-test("validation rejects overlapping families at C→counsel, R→A, and R→T", () => {
+test("validation rejects overlapping primary families at C→counsel, R→A, and R→T", () => {
 	const overlapC = {
 		...DEFAULT_ROUTES,
-		"craft-counsel": { model: "openai-codex/gpt-5.6-terra", fallbackModels: ["moonshot/kimi-k3"] },
+		"craft-counsel": { model: "openai-codex/gpt-5.6-terra", fallbackModels: ["xai/grok-4.6", "moonshot/kimi-k2.7-code"] },
 	};
 	assert.throws(() => validateSeams(overlapC), /C→counsel/);
 	const overlapA = {
 		...DEFAULT_ROUTES,
-		"craft-evaluator": { model: "zai/glm-5.1", fallbackModels: ["moonshot/kimi-k2.7-code"] },
+		"craft-evaluator": { model: "zai/glm-5.1", fallbackModels: ["openai-codex/gpt-5.6-sol", "moonshot/kimi-k2.7-code"] },
 	};
 	assert.throws(() => validateSeams(overlapA), /R→A/);
 	const overlapT = {
 		...DEFAULT_ROUTES,
-		"craft-security-review": { model: "zai/glm-5.3", fallbackModels: ["moonshot/kimi-k3"] },
+		"craft-security-review": { model: "zai/glm-5.3", fallbackModels: ["xai/grok-4.6", "moonshot/kimi-k2.7-code"] },
 	};
 	assert.throws(() => validateSeams(overlapT), /R→T/);
 	assert.doesNotThrow(() => validateSeams(DEFAULT_ROUTES));
+});
+
+test("validation allows overlapping fallbacks and rejects moonshot as primary or not-last", () => {
+	assert.doesNotThrow(() => validateSeams(DEFAULT_ROUTES));
+	assert.throws(
+		() => validateSeams({ ...DEFAULT_ROUTES, "craft-planner": { model: "moonshot/kimi-k2.7-code", fallbackModels: ["xai/grok-4.6"] } }),
+		/must not use moonshot as primary/,
+	);
+	assert.throws(
+		() =>
+			validateSeams({
+				...DEFAULT_ROUTES,
+				"craft-counsel": { model: "zai/glm-5.3", fallbackModels: ["moonshot/kimi-k2.7-code", "xai/grok-4.6"] },
+			}),
+		/moonshot must be last/,
+	);
 });
 
 test("unsupported hosts fail explicitly", () => {

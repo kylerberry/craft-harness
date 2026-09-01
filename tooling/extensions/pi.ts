@@ -4,6 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AGENT_PHASE, type Mode, type PhaseName } from "../src/schema.ts";
 import { BLIND_TARGETS, scrubPayload } from "../src/blind.ts";
 import { Store } from "../src/store.ts";
+import { extractSubagentUsage } from "./pi-child-usage.ts";
 
 const CRAFT_AGENTS = new Set(Object.keys(AGENT_PHASE));
 
@@ -66,7 +67,11 @@ export default function (pi: ExtensionAPI) {
 	let phaseAtAgentStart: PhaseName | undefined;
 
 	function resolveRun(cwd: string): string | undefined {
-		if (runId) return runId;
+		if (runId) {
+			const existing = store.get(runId);
+			if (existing?.outcome === "open") return runId;
+			runId = undefined;
+		}
 		const run = store.latestOpenForCwd(cwd);
 		if (!run) return undefined;
 		// The adapter observes its host first-hand; `start --host` only repeats what
@@ -184,6 +189,22 @@ export default function (pi: ExtensionAPI) {
 				timeout: timeout(errText),
 				failover: failover(errText),
 			}, false);
+			if (event.toolName !== "subagent") return;
+			const child = extractSubagentUsage(event.result, event.isError);
+			if (!child) return;
+			store.recordUsage(id, {
+				phase: store.openPhase(id),
+				agent,
+				model: child.model,
+				provider: child.provider,
+				tokens: child.tokens,
+				cost_usd: child.cost_usd,
+				turns: child.turns,
+				subagent: true,
+				quota_error: child.quota_error,
+				timeout: child.timeout,
+				failover: child.failover,
+			}, false);
 		});
 	});
 
@@ -250,6 +271,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", (_event, ctx) => {
 		safe(() => {
+			runId = undefined;
 			ctx.ui.setStatus("craft-metrics", undefined);
 		});
 	});

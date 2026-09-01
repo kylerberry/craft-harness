@@ -768,6 +768,7 @@ function applyUsage(phase: PhaseRecord, event: UsageEvent, how: Attribution = "n
 	}
 	if (event.subagent) {
 		phase.child_cost_usd += cost;
+		if (event.model) pushUnique(phase.child_models, event.model);
 		if (event.turns || event.cost_usd || event.tokens) phase.subagent_count += 1;
 	} else {
 		phase.conductor_cost_usd += cost;

@@ -110,6 +110,8 @@ export interface PhaseRecord {
 	subagent_count: number;
 	conductor_cost_usd: number;
 	child_cost_usd: number;
+	/** Models from `subagent: true` usage. Seam checks use this, not conductor models. */
+	child_models: string[];
 	/** Cost that landed here via the grace-window guess, not a stamp or an open phase. */
 	backfilled_cost_usd: number;
 	/** Count of usage events per attribution route, so a phase's provenance is auditable. */
@@ -287,6 +289,7 @@ export function emptyPhase(name: PhaseName): PhaseRecord {
 		subagent_count: 0,
 		conductor_cost_usd: 0,
 		child_cost_usd: 0,
+		child_models: [],
 		backfilled_cost_usd: 0,
 		attribution: { stamped: 0, "open-phase": 0, "agent-map": 0, backfilled: 0, none: 0 },
 		quota_errors: 0,
@@ -328,9 +331,9 @@ export function computeSeams(run: Run): Seams {
 	const a = byName.get("A");
 	const t = byName.get("T");
 	return {
-		counsel_family_differs_from_c: familiesDiffer(c?.models, counsel?.models),
-		a_family_differs_from_r: familiesDiffer(r?.models, a?.models),
-		t_family_differs_from_r: familiesDiffer(r?.models, t?.models),
+		counsel_family_differs_from_c: familiesDiffer(c?.child_models, counsel?.child_models),
+		a_family_differs_from_r: familiesDiffer(r?.child_models, a?.child_models),
+		t_family_differs_from_r: familiesDiffer(r?.child_models, t?.child_models),
 	};
 }
 

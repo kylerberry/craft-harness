@@ -4,7 +4,7 @@ Phase-grained collector. Skills emit semantics; host adapters stamp usage. Store
 
 ```
 skill                →  start / enter / exit / end
-Pi extension         →  turn_end, tool_execution_end, agent_end (residual only)
+Pi extension         →  turn_end, tool_execution_end (including child usage from `subagent` results), agent_end (residual only)
 Claude Code hooks    →  PostToolUse / Stop / SubagentStop / PreToolUse
 ```
 
